@@ -1,0 +1,22 @@
+name: unimet_ar
+description: Prototipo Flutter para guia AR interior UNIMET.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  camera: ^0.11.0+2
+  cupertino_icons: ^1.0.8
+  flutter:
+    sdk: flutter
+  http: ^1.2.2
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
