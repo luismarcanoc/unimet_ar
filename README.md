@@ -1,35 +1,63 @@
 # UNIMET AR
 
-Prototipo Flutter para probar guia visual sobre camara usando coordenadas locales.
+Prototipo Flutter para probar una guia visual tipo AR usando coordenadas locales.
 
-## Estado
+La primera version esta pensada para pruebas fisicas en casa:
 
-Este repo contiene el codigo Dart de la app. En esta maquina `flutter` no esta disponible en el PATH, asi que no se pudieron generar las carpetas nativas con `flutter create`.
+- eliges donde estas,
+- eliges un destino,
+- abres una vista con camara,
+- ves una flecha y distancia aproximada,
+- simulas la orientacion del telefono con un slider.
 
-Cuando tengas Flutter instalado/configurado, ejecuta dentro de esta carpeta:
+Luego el slider se reemplaza por sensores del telefono y los puntos de prueba por salones reales.
 
-```bash
-powershell -ExecutionPolicy Bypass -File .\tool\setup_flutter_project.ps1
+## Guia Completa
+
+Lee el tutorial paso a paso aqui:
+
+[docs/TUTORIAL_ANDROID.md](docs/TUTORIAL_ANDROID.md)
+
+## Comandos Rapidos
+
+Desde esta carpeta:
+
+```powershell
+flutter pub get
+flutter devices
 flutter run
 ```
 
-## Prueba en casa
+Si necesitas regenerar Android/iOS:
 
-La app trae puntos falsos:
-
-```text
-CASA-ENTRADA: x=0, y=0
-CASA-SALA: x=2, y=1
-CASA-COCINA: x=5, y=1
-CASA-CUARTO: x=5, y=-2
-CASA-BANO: x=3, y=-2
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tool\setup_flutter_project.ps1
 ```
 
-Flujo:
+## Estructura Importante
 
-1. Selecciona donde estas.
-2. Selecciona destino.
-3. Abre guia AR.
-4. Mueve el slider de orientacion para simular hacia donde apunta el telefono.
+```text
+lib/main.dart                      Codigo principal del prototipo
+pubspec.yaml                       Dependencias Flutter
+android/                           Proyecto Android generado
+ios/                               Proyecto iOS generado
+tool/setup_flutter_project.ps1     Script para regenerar el proyecto nativo
+docs/TUTORIAL_ANDROID.md           Tutorial de instalacion, ejecucion y uso
+```
 
-Luego se puede reemplazar el slider por brujula/sensores del telefono.
+## Estado Actual
+
+El proyecto ya tiene:
+
+- Flutter app base.
+- Soporte Android/iOS generado.
+- Permiso de camara en Android.
+- Dependencia `camera`.
+- Datos falsos para prueba en casa.
+- Pantalla de guia con camara/fallback.
+
+Para probarlo en telefono real, conecta un Android con Depuracion USB activa y corre:
+
+```powershell
+flutter run
+```
