@@ -35,7 +35,12 @@ try {
   if (Test-Path $infoPlist) {
     $plistText = Get-Content -LiteralPath $infoPlist -Raw
     if ($plistText -notmatch "NSCameraUsageDescription") {
-      $plistText = $plistText -replace "</dict>", "    <key>NSCameraUsageDescription</key>`n    <string>La camara se usa para mostrar la guia AR sobre el entorno.</string>`n</dict>"
+      $cameraPermission = "`t<key>NSCameraUsageDescription</key>`n`t<string>La camara se usa para mostrar la guia AR sobre el entorno.</string>`n"
+      $rootDictIndex = $plistText.IndexOf("<dict>")
+      if ($rootDictIndex -ge 0) {
+        $insertAt = $rootDictIndex + "<dict>".Length
+        $plistText = $plistText.Insert($insertAt, "`n" + $cameraPermission)
+      }
       Set-Content -LiteralPath $infoPlist -Value $plistText
     }
   }

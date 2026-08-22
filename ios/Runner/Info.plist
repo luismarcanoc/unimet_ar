@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Unimet Ar</string>
+	<string>UNIMET AR</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -26,6 +26,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>La camara se usa para mostrar la guia AR sobre el entorno.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -43,16 +45,10 @@
 					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
 					<key>UISceneStoryboardFile</key>
 					<string>Main</string>
-				    <key>NSCameraUsageDescription</key>
-    <string>La camara se usa para mostrar la guia AR sobre el entorno.</string>
-</dict>
+				</dict>
 			</array>
-		    <key>NSCameraUsageDescription</key>
-    <string>La camara se usa para mostrar la guia AR sobre el entorno.</string>
-</dict>
-	    <key>NSCameraUsageDescription</key>
-    <string>La camara se usa para mostrar la guia AR sobre el entorno.</string>
-</dict>
+		</dict>
+	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -72,8 +68,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-    <key>NSCameraUsageDescription</key>
-    <string>La camara se usa para mostrar la guia AR sobre el entorno.</string>
 </dict>
 </plist>
-

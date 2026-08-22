@@ -18,6 +18,14 @@ Lee el tutorial paso a paso aqui:
 
 [docs/TUTORIAL_ANDROID.md](docs/TUTORIAL_ANDROID.md)
 
+Para iPhone/macOS:
+
+[docs/TUTORIAL_IOS.md](docs/TUTORIAL_IOS.md)
+
+Instalacion completa desde cero en Mac:
+
+[docs/INSTALACION_MAC_COMPLETA.md](docs/INSTALACION_MAC_COMPLETA.md)
+
 ## Comandos Rapidos
 
 Desde esta carpeta:
@@ -43,6 +51,8 @@ android/                           Proyecto Android generado
 ios/                               Proyecto iOS generado
 tool/setup_flutter_project.ps1     Script para regenerar el proyecto nativo
 docs/TUTORIAL_ANDROID.md           Tutorial de instalacion, ejecucion y uso
+docs/TUTORIAL_IOS.md               Tutorial para compilar/probar en iPhone
+docs/INSTALACION_MAC_COMPLETA.md   Instalacion completa en Mac desde cero
 ```
 
 ## Estado Actual
@@ -52,6 +62,7 @@ El proyecto ya tiene:
 - Flutter app base.
 - Soporte Android/iOS generado.
 - Permiso de camara en Android.
+- Permiso de camara en iOS.
 - Dependencia `camera`.
 - Datos falsos para prueba en casa.
 - Pantalla de guia con camara/fallback.
