@@ -212,9 +212,9 @@ pod install
 cd ..
 ```
 
-## 10. Verificar Permiso De Camara
+## 10. Verificar Permisos De Camara Y Ubicacion
 
-El proyecto ya trae permiso de camara en:
+El proyecto ya trae los permisos en:
 
 ```text
 ios/Runner/Info.plist
@@ -224,15 +224,17 @@ Debe existir:
 
 ```text
 NSCameraUsageDescription
+NSLocationWhenInUseUsageDescription
 ```
 
 con un texto parecido a:
 
 ```text
 La camara se usa para mostrar la guia AR sobre el entorno.
+Tu ubicacion se usa para marcar puntos de interes y guiarte hacia ellos.
 ```
 
-Este permiso es obligatorio porque la app usa la camara para el overlay tipo AR.
+Estos permisos son obligatorios porque la app combina camara, posicion en vivo y brujula.
 
 ## 11. Abrir El Proyecto En Xcode
 
@@ -344,16 +346,15 @@ Trust
 
 Al abrir la app:
 
-1. Selecciona `Estoy en`.
-2. Selecciona `Quiero ir a`.
-3. Toca `Abrir guia AR`.
-4. Acepta permiso de camara.
-5. Veras la camara con una flecha encima.
-6. Mueve el slider de orientacion simulada.
+1. Lee el tutorial que aparece durante el primer uso.
+2. Toca el boton `+`, escribe un nombre y marca la ubicacion actual.
+3. Acepta los permisos de camara y ubicacion.
+4. Activa `Precise Location` para UNIMET AR.
+5. Alejate al menos 10 metros del punto.
+6. Selecciona el punto y toca `Guiarme a...`.
+7. Gira el iPhone: la brujula y la flecha se moveran automaticamente.
 
-Por ahora el slider simula la brujula del telefono.
-
-Mas adelante se reemplazara por orientacion real con sensores.
+Los puntos se guardan localmente en el iPhone. Solo hay un destino seleccionado a la vez y cada registro puede borrarse desde la lista.
 
 ## 18. Comandos Rapidos
 
@@ -450,6 +451,16 @@ Settings > Privacy & Security > Camera
 La app debe tener permiso.
 
 Tambien revisa `Info.plist`.
+
+### Ubicacion O Brujula No Responden
+
+Revisa:
+
+```text
+Settings > Privacy & Security > Location Services > UNIMET AR
+```
+
+Selecciona `While Using the App` y activa `Precise Location`. Si la flecha oscila, aleja el iPhone de objetos metalicos o magneticos y muevelo lentamente dibujando un ocho.
 
 ### Error Con Pods Despues De Cambiar Dependencias
 

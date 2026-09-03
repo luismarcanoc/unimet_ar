@@ -1,16 +1,19 @@
 # UNIMET AR
 
-Prototipo Flutter para probar una guia visual tipo AR usando coordenadas locales.
+Prototipo Flutter para probar una guia visual tipo AR usando la ubicacion y los
+sensores de un telefono real.
 
 La primera version esta pensada para pruebas fisicas en casa:
 
-- eliges donde estas,
-- eliges un destino,
+- marcas uno o mas puntos de interes,
+- eliges un unico destino,
 - abres una vista con camara,
-- ves una flecha y distancia aproximada,
-- simulas la orientacion del telefono con un slider.
+- ves una flecha tridimensional y la distancia aproximada,
+- la brujula del telefono orienta la flecha automaticamente,
+- la ubicacion en vivo actualiza la distancia mientras caminas.
 
-Luego el slider se reemplaza por sensores del telefono y los puntos de prueba por salones reales.
+Los puntos quedan guardados localmente en el telefono. Esta fase permite probar
+el flujo en casa antes de conectar la aplicacion con los salones reales.
 
 ## Guia Completa
 
@@ -63,9 +66,12 @@ El proyecto ya tiene:
 - Soporte Android/iOS generado.
 - Permiso de camara en Android.
 - Permiso de camara en iOS.
-- Dependencia `camera`.
-- Datos falsos para prueba en casa.
-- Pantalla de guia con camara/fallback.
+- Permisos de ubicacion en Android/iOS.
+- Registro, seleccion y borrado de puntos de interes.
+- Prevencion de puntos duplicados a menos de 2 metros.
+- Tutorial emergente durante el primer uso.
+- Brujula automatica y seguimiento de ubicacion en vivo.
+- Guia visual con flecha tridimensional sobre la camara.
 
 Para probarlo en telefono real, conecta un Android con Depuracion USB activa y corre:
 

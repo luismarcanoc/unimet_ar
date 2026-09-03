@@ -28,7 +28,7 @@ lib/main.dart
 pubspec.yaml
 ```
 
-Tambien tiene el permiso de camara en:
+Tambien tiene los permisos de camara y ubicacion en:
 
 ```text
 ios/Runner/Info.plist
@@ -38,12 +38,14 @@ La clave configurada es:
 
 ```text
 NSCameraUsageDescription
+NSLocationWhenInUseUsageDescription
 ```
 
 con el texto:
 
 ```text
 La camara se usa para mostrar la guia AR sobre el entorno.
+Tu ubicacion se usa para marcar puntos de interes y guiarte hacia ellos.
 ```
 
 ## 3. Preparar La Mac
@@ -238,7 +240,27 @@ Tambien revisa que `Info.plist` tenga:
 NSCameraUsageDescription
 ```
 
-## 10. Desarrollo Windows + Mac
+### No Permite Marcar Puntos O La Brujula No Responde
+
+Revisa en el iPhone:
+
+```text
+Settings > Privacy & Security > Location Services > UNIMET AR
+```
+
+Selecciona `While Using the App` y activa `Precise Location`. La guia usa GPS para la posicion actual y la brujula del iPhone para orientar la flecha sin slider.
+
+## 10. Probar El Flujo Nuevo
+
+1. Abre la app y lee el tutorial del primer uso.
+2. Toca `+`, escribe un nombre y marca la ubicacion actual.
+3. Alejate al menos 10 metros para que la variacion del GPS sea visible.
+4. Selecciona el punto y toca `Guiarme a...`.
+5. Gira el iPhone y confirma que la flecha y la brujula se muevan solas.
+
+Los puntos quedan guardados localmente en ese iPhone y se pueden borrar desde la lista.
+
+## 11. Desarrollo Windows + Mac
 
 Pueden trabajar asi:
 
@@ -264,7 +286,7 @@ Lo que si depende de la Mac:
 - usar Xcode,
 - TestFlight/App Store.
 
-## 11. Comandos Rapidos En Mac
+## 12. Comandos Rapidos En Mac
 
 ```bash
 cd unimet_ar
@@ -280,7 +302,7 @@ Si quieres abrir Xcode:
 open ios/Runner.xcworkspace
 ```
 
-## 12. Recomendacion Para Este Proyecto
+## 13. Recomendacion Para Este Proyecto
 
 Desarrollen la mayor parte de la logica Flutter en cualquier computadora.
 

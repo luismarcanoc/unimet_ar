@@ -27,8 +27,14 @@ try {
     $manifestText = Get-Content -LiteralPath $androidManifest -Raw
     if ($manifestText -notmatch "android.permission.CAMERA") {
       $manifestText = $manifestText -replace "<manifest([^>]*)>", "<manifest`$1>`n    <uses-permission android:name=`"android.permission.CAMERA`" />"
-      Set-Content -LiteralPath $androidManifest -Value $manifestText
     }
+    if ($manifestText -notmatch "android.permission.ACCESS_COARSE_LOCATION") {
+      $manifestText = $manifestText -replace "<manifest([^>]*)>", "<manifest`$1>`n    <uses-permission android:name=`"android.permission.ACCESS_COARSE_LOCATION`" />"
+    }
+    if ($manifestText -notmatch "android.permission.ACCESS_FINE_LOCATION") {
+      $manifestText = $manifestText -replace "<manifest([^>]*)>", "<manifest`$1>`n    <uses-permission android:name=`"android.permission.ACCESS_FINE_LOCATION`" />"
+    }
+    Set-Content -LiteralPath $androidManifest -Value $manifestText
   }
 
   $infoPlist = Join-Path $root "ios\Runner\Info.plist"
@@ -41,8 +47,16 @@ try {
         $insertAt = $rootDictIndex + "<dict>".Length
         $plistText = $plistText.Insert($insertAt, "`n" + $cameraPermission)
       }
-      Set-Content -LiteralPath $infoPlist -Value $plistText
     }
+    if ($plistText -notmatch "NSLocationWhenInUseUsageDescription") {
+      $locationPermission = "`t<key>NSLocationWhenInUseUsageDescription</key>`n`t<string>Tu ubicacion se usa para marcar puntos de interes y guiarte hacia ellos.</string>`n"
+      $rootDictIndex = $plistText.IndexOf("<dict>")
+      if ($rootDictIndex -ge 0) {
+        $insertAt = $rootDictIndex + "<dict>".Length
+        $plistText = $plistText.Insert($insertAt, "`n" + $locationPermission)
+      }
+    }
+    Set-Content -LiteralPath $infoPlist -Value $plistText
   }
 
   flutter pub get

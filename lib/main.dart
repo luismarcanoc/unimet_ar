@@ -1,19 +1,31 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_compass/flutter_compass.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+const _blue = Color(0xFF1769E8);
+const _navy = Color(0xFF081B49);
+const _muted = Color(0xFF607195);
+const _background = Color(0xFFF3F7FF);
+const _savedPointsKey = 'saved_interest_points_v1';
+const _selectedPointKey = 'selected_interest_point_v1';
+const _onboardingKey = 'onboarding_seen_v1';
+const _duplicateRadiusMeters = 2.0;
+const _arrivalRadiusMeters = 2.0;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
   List<CameraDescription> cameras = [];
   try {
     cameras = await availableCameras();
   } catch (_) {
     cameras = [];
   }
-
   runApp(UnimetArApp(cameras: cameras));
 }
 
@@ -28,10 +40,8 @@ class UnimetArApp extends StatelessWidget {
       title: 'UNIMET AR',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2F73FF),
-          brightness: Brightness.light,
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: _blue),
+        scaffoldBackgroundColor: _background,
         useMaterial3: true,
         fontFamily: 'Roboto',
       ),
@@ -40,68 +50,43 @@ class UnimetArApp extends StatelessWidget {
   }
 }
 
-enum PointKind { current, classroom, area }
-
-class IndoorPoint {
-  const IndoorPoint({
+class InterestPoint {
+  const InterestPoint({
     required this.id,
     required this.name,
-    required this.x,
-    required this.y,
-    required this.floor,
-    required this.kind,
+    required this.latitude,
+    required this.longitude,
+    required this.accuracy,
+    required this.createdAt,
   });
 
   final String id;
   final String name;
-  final double x;
-  final double y;
-  final int floor;
-  final PointKind kind;
-}
+  final double latitude;
+  final double longitude;
+  final double accuracy;
+  final DateTime createdAt;
 
-const demoPoints = <IndoorPoint>[
-  IndoorPoint(
-    id: 'CASA-ENTRADA',
-    name: 'Entrada',
-    x: 0,
-    y: 0,
-    floor: 1,
-    kind: PointKind.current,
-  ),
-  IndoorPoint(
-    id: 'CASA-SALA',
-    name: 'Sala',
-    x: 2,
-    y: 1,
-    floor: 1,
-    kind: PointKind.classroom,
-  ),
-  IndoorPoint(
-    id: 'CASA-COCINA',
-    name: 'Cocina',
-    x: 5,
-    y: 1,
-    floor: 1,
-    kind: PointKind.classroom,
-  ),
-  IndoorPoint(
-    id: 'CASA-CUARTO',
-    name: 'Cuarto',
-    x: 5,
-    y: -2,
-    floor: 1,
-    kind: PointKind.classroom,
-  ),
-  IndoorPoint(
-    id: 'CASA-BANO',
-    name: 'Bano',
-    x: 3,
-    y: -2,
-    floor: 1,
-    kind: PointKind.area,
-  ),
-];
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'latitude': latitude,
+        'longitude': longitude,
+        'accuracy': accuracy,
+        'createdAt': createdAt.toIso8601String(),
+      };
+
+  factory InterestPoint.fromJson(Map<String, dynamic> json) {
+    return InterestPoint(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      latitude: (json['latitude'] as num).toDouble(),
+      longitude: (json['longitude'] as num).toDouble(),
+      accuracy: (json['accuracy'] as num).toDouble(),
+      createdAt: DateTime.parse(json['createdAt'] as String),
+    );
+  }
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.cameras});
@@ -113,108 +98,550 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  IndoorPoint current = demoPoints.first;
-  IndoorPoint destination = demoPoints[2];
+  final SharedPreferencesAsync _preferences = SharedPreferencesAsync();
+  List<InterestPoint> _points = [];
+  String? _selectedPointId;
+  bool _loading = true;
+  bool _working = false;
 
-  void setCurrent(IndoorPoint point) {
-    setState(() {
-      current = point;
-      if (destination.id == current.id) {
-        destination = demoPoints.firstWhere((item) => item.id != current.id);
-      }
+  InterestPoint? get _selectedPoint {
+    for (final point in _points) {
+      if (point.id == _selectedPointId) return point;
+    }
+    return null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showOnboardingIfNeeded();
     });
+  }
+
+  Future<void> _loadSavedState() async {
+    final rawPoints =
+        await _preferences.getStringList(_savedPointsKey) ?? <String>[];
+    final selectedPointId = await _preferences.getString(_selectedPointKey);
+    final points = <InterestPoint>[];
+    for (final rawPoint in rawPoints) {
+      try {
+        points.add(
+          InterestPoint.fromJson(
+            jsonDecode(rawPoint) as Map<String, dynamic>,
+          ),
+        );
+      } catch (_) {
+        // Ignore malformed local records instead of blocking the app.
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _points = points;
+      _selectedPointId = points.any((point) => point.id == selectedPointId)
+          ? selectedPointId
+          : null;
+      _loading = false;
+    });
+  }
+
+  Future<void> _showOnboardingIfNeeded() async {
+    final alreadySeen = await _preferences.getBool(_onboardingKey) ?? false;
+    if (!alreadySeen && mounted) await _showOnboarding();
+  }
+
+  Future<void> _showOnboarding() async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        icon: const Icon(Icons.explore_rounded, color: _blue, size: 42),
+        title: const Text(
+          'Prueba tu primera guía',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: _navy, fontWeight: FontWeight.w900),
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            OnboardingStep(
+              number: '1',
+              text:
+                  'Crea tu primer punto de interés en cualquier lugar de tu alrededor. Puedes probar la app con un solo punto.',
+            ),
+            SizedBox(height: 18),
+            OnboardingStep(
+              number: '2',
+              text:
+                  'Aléjate lo suficiente del punto, selecciónalo como destino y abre la guía para que la flecha te lleve de vuelta.',
+            ),
+            SizedBox(height: 16),
+            Text(
+              'Activa la ubicación precisa y evita estar junto a objetos metálicos.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: _muted, fontSize: 13, height: 1.35),
+            ),
+          ],
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+    await _preferences.setBool(_onboardingKey, true);
+  }
+
+  Future<bool> _ensureLocationPermission() async {
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      if (!mounted) return false;
+      await _showLocationProblem(
+        title: 'Activa la ubicación',
+        message:
+            'El teléfono necesita la ubicación encendida para marcar y seguir puntos.',
+        actionLabel: 'Abrir ajustes',
+        onAction: Geolocator.openLocationSettings,
+      );
+      return false;
+    }
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.deniedForever) {
+      if (!mounted) return false;
+      await _showLocationProblem(
+        title: 'Permiso bloqueado',
+        message:
+            'Permite la ubicación precisa para UNIMET AR desde los ajustes del teléfono.',
+        actionLabel: 'Abrir ajustes',
+        onAction: Geolocator.openAppSettings,
+      );
+      return false;
+    }
+    if (permission == LocationPermission.denied) {
+      _showMessage('No se concedió el permiso de ubicación.');
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _showLocationProblem({
+    required String title,
+    required String message,
+    required String actionLabel,
+    required Future<bool> Function() onAction,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Ahora no'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              unawaited(onAction());
+            },
+            child: Text(actionLabel),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _askPointName() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Nuevo punto de interés'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          maxLength: 40,
+          decoration: const InputDecoration(
+            labelText: 'Nombre del punto',
+            hintText: 'Ej. Puerta de la sala',
+            prefixIcon: Icon(Icons.place_outlined),
+          ),
+          onSubmitted: (value) {
+            final trimmed = value.trim();
+            if (trimmed.isNotEmpty) Navigator.of(dialogContext).pop(trimmed);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final trimmed = controller.text.trim();
+              if (trimmed.isNotEmpty) Navigator.of(dialogContext).pop(trimmed);
+            },
+            child: const Text('Marcar aquí'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return name;
+  }
+
+  Future<void> _markPoint() async {
+    final name = await _askPointName();
+    if (name == null || !mounted) return;
+    if (_points
+        .any((point) => point.name.toLowerCase() == name.toLowerCase())) {
+      _showMessage('Ya existe un punto con ese nombre.');
+      return;
+    }
+    if (!await _ensureLocationPermission() || !mounted) return;
+    setState(() => _working = true);
+    try {
+      final position = await _currentHighAccuracyPosition();
+      InterestPoint? duplicate;
+      double? duplicateDistance;
+      for (final point in _points) {
+        final distance = coordinateDistanceMeters(
+          position.latitude,
+          position.longitude,
+          point.latitude,
+          point.longitude,
+        );
+        if (distance <= _duplicateRadiusMeters) {
+          duplicate = point;
+          duplicateDistance = distance;
+          break;
+        }
+      }
+      if (duplicate != null) {
+        _showMessage(
+          'Ya existe “${duplicate.name}” a ${duplicateDistance!.toStringAsFixed(1)} m.',
+        );
+        return;
+      }
+      final point = InterestPoint(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        name: name,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracy: position.accuracy,
+        createdAt: DateTime.now(),
+      );
+      setState(() {
+        _points = [..._points, point];
+        _selectedPointId = point.id;
+      });
+      await _savePoints();
+      final warning = position.accuracy > 10
+          ? ' Precisión baja (${position.accuracy.toStringAsFixed(0)} m); intenta de nuevo cerca de una ventana.'
+          : '';
+      _showMessage('Punto guardado y seleccionado.$warning');
+    } on TimeoutException {
+      _showMessage(
+          'La ubicación tardó demasiado. Inténtalo cerca de una ventana.');
+    } catch (_) {
+      _showMessage(
+          'No se pudo obtener una ubicación precisa. Inténtalo de nuevo.');
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  Future<Position> _currentHighAccuracyPosition() {
+    return Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        timeLimit: Duration(seconds: 25),
+      ),
+    );
+  }
+
+  Future<void> _savePoints() async {
+    await _preferences.setStringList(
+      _savedPointsKey,
+      _points.map((point) => jsonEncode(point.toJson())).toList(),
+    );
+    if (_selectedPointId == null) {
+      await _preferences.remove(_selectedPointKey);
+    } else {
+      await _preferences.setString(_selectedPointKey, _selectedPointId!);
+    }
+  }
+
+  Future<void> _selectPoint(InterestPoint point) async {
+    setState(() => _selectedPointId = point.id);
+    await _preferences.setString(_selectedPointKey, point.id);
+  }
+
+  Future<void> _deletePoint(InterestPoint point) async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Borrar punto'),
+            content: Text('¿Quieres borrar “${point.name}”?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Borrar'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed) return;
+    setState(() {
+      _points = _points.where((item) => item.id != point.id).toList();
+      if (_selectedPointId == point.id) _selectedPointId = null;
+    });
+    await _savePoints();
+  }
+
+  Future<void> _openGuide() async {
+    final destination = _selectedPoint;
+    if (destination == null) {
+      _showMessage('Selecciona un punto de destino.');
+      return;
+    }
+    if (!await _ensureLocationPermission() || !mounted) return;
+    setState(() => _working = true);
+    try {
+      final position = await _currentHighAccuracyPosition();
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ArGuideScreen(
+            cameras: widget.cameras,
+            initialPosition: position,
+            destination: destination,
+          ),
+        ),
+      );
+    } on TimeoutException {
+      _showMessage('La ubicación tardó demasiado. Inténtalo de nuevo.');
+    } catch (_) {
+      _showMessage('No fue posible iniciar el seguimiento.');
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
-    final distance = distanceBetween(current, destination);
-
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F7FF),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            const SizedBox(height: 12),
-            const Text(
-              'UNIMET AR',
-              style: TextStyle(
-                color: Color(0xFF0B1D4D),
-                fontSize: 38,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Prototipo fisico con coordenadas locales. Usa tu casa como edificio de prueba.',
-              style: TextStyle(
-                color: Color(0xFF607195),
-                fontSize: 16,
-                height: 1.35,
-              ),
-            ),
-            const SizedBox(height: 24),
-            SelectionCard(
-              title: 'Estoy en',
-              value: current,
-              points: demoPoints,
-              onChanged: setCurrent,
-            ),
-            const SizedBox(height: 14),
-            SelectionCard(
-              title: 'Quiero ir a',
-              value: destination,
-              points: demoPoints.where((point) => point.id != current.id).toList(),
-              onChanged: (point) => setState(() => destination = point),
-            ),
-            const SizedBox(height: 18),
-            RouteSummary(current: current, destination: destination),
-            const SizedBox(height: 22),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(58),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-              ),
-              icon: const Icon(Icons.view_in_ar_rounded),
-              label: Text(
-                'Abrir guia AR (${distance.toStringAsFixed(1)} m)',
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ArGuideScreen(
-                      cameras: widget.cameras,
-                      current: current,
-                      destination: destination,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : CustomScrollView(
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+                    sliver: SliverToBoxAdapter(
+                      child: HomeHeader(onHelp: _showOnboarding),
                     ),
                   ),
-                );
-              },
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+                    sliver: SliverToBoxAdapter(
+                      child: MarkPointPanel(busy: _working, onMark: _markPoint),
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
+                    sliver: SliverToBoxAdapter(
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Puntos guardados',
+                              style: TextStyle(
+                                color: _navy,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '${_points.length}',
+                            style: const TextStyle(
+                              color: _muted,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (_points.isEmpty)
+                    const SliverPadding(
+                      padding: EdgeInsets.symmetric(horizontal: 20),
+                      sliver: SliverToBoxAdapter(child: EmptyPointsState()),
+                    )
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      sliver: SliverList.separated(
+                        itemCount: _points.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (context, index) {
+                          final point = _points[index];
+                          return PointTile(
+                            point: point,
+                            selected: point.id == _selectedPointId,
+                            onSelect: () => _selectPoint(point),
+                            onDelete: () => _deletePoint(point),
+                          );
+                        },
+                      ),
+                    ),
+                  const SliverToBoxAdapter(child: SizedBox(height: 110)),
+                ],
+              ),
+      ),
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(20, 8, 20, 14),
+        child: FilledButton.icon(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size.fromHeight(58),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
             ),
-          ],
+          ),
+          onPressed: _selectedPoint == null || _working ? null : _openGuide,
+          icon: _working
+              ? const SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.view_in_ar_rounded),
+          label: Text(
+            _selectedPoint == null
+                ? 'Selecciona un destino'
+                : 'Guiarme a ${_selectedPoint!.name}',
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
         ),
       ),
     );
   }
 }
 
-class SelectionCard extends StatelessWidget {
-  const SelectionCard({
+class OnboardingStep extends StatelessWidget {
+  const OnboardingStep({
     super.key,
-    required this.title,
-    required this.value,
-    required this.points,
-    required this.onChanged,
+    required this.number,
+    required this.text,
   });
 
-  final String title;
-  final IndoorPoint value;
-  final List<IndoorPoint> points;
-  final ValueChanged<IndoorPoint> onChanged;
+  final String number;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(color: _blue, shape: BoxShape.circle),
+          child: Text(
+            number,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(color: _navy, height: 1.4),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class HomeHeader extends StatelessWidget {
+  const HomeHeader({super.key, required this.onHelp});
+
+  final VoidCallback onHelp;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'UNIMET AR',
+                style: TextStyle(
+                  color: _navy,
+                  fontSize: 34,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0,
+                ),
+              ),
+              SizedBox(height: 5),
+              Text(
+                'Marca un lugar y deja que el teléfono te guíe de vuelta.',
+                style: TextStyle(color: _muted, fontSize: 15, height: 1.35),
+              ),
+            ],
+          ),
+        ),
+        IconButton.filledTonal(
+          tooltip: 'Cómo usar la app',
+          onPressed: onHelp,
+          icon: const Icon(Icons.help_outline_rounded),
+        ),
+      ],
+    );
+  }
+}
+
+class MarkPointPanel extends StatelessWidget {
+  const MarkPointPanel({
+    super.key,
+    required this.busy,
+    required this.onMark,
+  });
+
+  final bool busy;
+  final VoidCallback onMark;
 
   @override
   Widget build(BuildContext context) {
@@ -222,47 +649,47 @@ class SelectionCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF1A396B).withOpacity(0.11),
-            blurRadius: 32,
-            offset: const Offset(0, 16),
+            color: _navy.withValues(alpha: 0.09),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: Color(0xFF607195),
-              fontWeight: FontWeight.w800,
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F1FF),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.add_location_alt_rounded, color: _blue),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Marca tu ubicación actual',
+                  style: TextStyle(color: _navy, fontWeight: FontWeight.w900),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Se guardará como un destino.',
+                  style: TextStyle(color: _muted, fontSize: 13),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 10),
-          DropdownButtonFormField<IndoorPoint>(
-            value: points.any((point) => point.id == value.id) ? value : points.first,
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: const Color(0xFFF8FBFF),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
-              ),
-            ),
-            items: points
-                .map(
-                  (point) => DropdownMenuItem(
-                    value: point,
-                    child: Text('${point.id} - ${point.name}'),
-                  ),
-                )
-                .toList(),
-            onChanged: (point) {
-              if (point != null) onChanged(point);
-            },
+          IconButton.filled(
+            tooltip: 'Marcar punto',
+            onPressed: busy ? null : onMark,
+            icon: const Icon(Icons.add_rounded),
           ),
         ],
       ),
@@ -270,52 +697,102 @@ class SelectionCard extends StatelessWidget {
   }
 }
 
-class RouteSummary extends StatelessWidget {
-  const RouteSummary({
-    super.key,
-    required this.current,
-    required this.destination,
-  });
-
-  final IndoorPoint current;
-  final IndoorPoint destination;
+class EmptyPointsState extends StatelessWidget {
+  const EmptyPointsState({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final bearing = bearingBetween(current, destination);
-    final distance = distanceBetween(current, destination);
-
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 28),
       decoration: BoxDecoration(
-        color: const Color(0xFF0B1D4D),
-        borderRadius: BorderRadius.circular(22),
+        color: const Color(0xFFEAF2FF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFC9DCFA)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: const Column(
         children: [
-          const Text(
-            'Ruta calculada',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 8),
+          Icon(Icons.pin_drop_outlined, color: _blue, size: 42),
+          SizedBox(height: 10),
           Text(
-            '${distance.toStringAsFixed(1)} m hacia ${cardinalFromDegrees(bearing)}',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-            ),
+            'Todavía no hay puntos',
+            style: TextStyle(color: _navy, fontWeight: FontWeight.w900),
           ),
-          const SizedBox(height: 6),
+          SizedBox(height: 5),
           Text(
-            'Bearing ${bearing.toStringAsFixed(0)} grados desde ${current.name} hasta ${destination.name}.',
-            style: const TextStyle(color: Colors.white70, height: 1.35),
+            'Usa el botón + para guardar el primero.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: _muted),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class PointTile extends StatelessWidget {
+  const PointTile({
+    super.key,
+    required this.point,
+    required this.selected,
+    required this.onSelect,
+    required this.onDelete,
+  });
+
+  final InterestPoint point;
+  final bool selected;
+  final VoidCallback onSelect;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? const Color(0xFFE7F0FF) : Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(
+          color: selected ? _blue : const Color(0xFFDCE5F3),
+          width: selected ? 1.5 : 1,
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onSelect,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+          child: Row(
+            children: [
+              Icon(
+                selected ? Icons.radio_button_checked : Icons.radio_button_off,
+                color: selected ? _blue : _muted,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      point.name,
+                      style: const TextStyle(
+                        color: _navy,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Precisión al marcar: ±${point.accuracy.toStringAsFixed(0)} m',
+                      style: const TextStyle(color: _muted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Borrar ${point.name}',
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline_rounded),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -325,90 +802,160 @@ class ArGuideScreen extends StatefulWidget {
   const ArGuideScreen({
     super.key,
     required this.cameras,
-    required this.current,
+    required this.initialPosition,
     required this.destination,
   });
 
   final List<CameraDescription> cameras;
-  final IndoorPoint current;
-  final IndoorPoint destination;
+  final Position initialPosition;
+  final InterestPoint destination;
 
   @override
   State<ArGuideScreen> createState() => _ArGuideScreenState();
 }
 
 class _ArGuideScreenState extends State<ArGuideScreen> {
-  CameraController? controller;
-  Future<void>? cameraReady;
-  double headingDegrees = 0;
+  CameraController? _cameraController;
+  Future<void>? _cameraReady;
+  StreamSubscription<Position>? _positionSubscription;
+  StreamSubscription<CompassEvent>? _compassSubscription;
+  late Position _currentPosition;
+  double? _headingDegrees;
+  String? _sensorProblem;
 
   @override
   void initState() {
     super.initState();
-    if (widget.cameras.isNotEmpty) {
-      controller = CameraController(
-        widget.cameras.first,
-        ResolutionPreset.high,
-        enableAudio: false,
-      );
-      cameraReady = controller!.initialize();
+    _currentPosition = widget.initialPosition;
+    _initializeCamera();
+    _startLiveTracking();
+  }
+
+  void _initializeCamera() {
+    if (widget.cameras.isEmpty) return;
+    final backCameras = widget.cameras.where(
+      (camera) => camera.lensDirection == CameraLensDirection.back,
+    );
+    final camera =
+        backCameras.isNotEmpty ? backCameras.first : widget.cameras.first;
+    _cameraController = CameraController(
+      camera,
+      ResolutionPreset.high,
+      enableAudio: false,
+    );
+    _cameraReady = _cameraController!.initialize();
+  }
+
+  void _startLiveTracking() {
+    const settings = LocationSettings(
+      accuracy: LocationAccuracy.bestForNavigation,
+      distanceFilter: 1,
+    );
+    _positionSubscription = Geolocator.getPositionStream(
+      locationSettings: settings,
+    ).listen(
+      (position) {
+        if (mounted) setState(() => _currentPosition = position);
+      },
+      onError: (_) {
+        if (mounted) {
+          setState(
+              () => _sensorProblem = 'No se pudo actualizar la ubicación.');
+        }
+      },
+    );
+
+    final compassEvents = FlutterCompass.events;
+    if (compassEvents == null) {
+      _sensorProblem = 'Este dispositivo no ofrece datos de brújula.';
+      return;
     }
+    _compassSubscription = compassEvents.listen(
+      (event) {
+        final newHeading = event.heading;
+        if (newHeading == null || !mounted) return;
+        setState(() {
+          if (_headingDegrees == null) {
+            _headingDegrees = normalizeDegrees(newHeading);
+          } else {
+            final delta = shortestSignedAngle(newHeading - _headingDegrees!);
+            _headingDegrees = normalizeDegrees(_headingDegrees! + delta * 0.22);
+          }
+          _sensorProblem = null;
+        });
+      },
+      onError: (_) {
+        if (mounted) {
+          setState(() => _sensorProblem = 'No se pudo leer la brújula.');
+        }
+      },
+    );
   }
 
   @override
   void dispose() {
-    unawaited(controller?.dispose());
+    unawaited(_positionSubscription?.cancel());
+    unawaited(_compassSubscription?.cancel());
+    unawaited(_cameraController?.dispose());
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final distance = distanceBetween(widget.current, widget.destination);
-    final targetBearing = bearingBetween(widget.current, widget.destination);
-    final relativeBearing = normalizeDegrees(targetBearing - headingDegrees);
-    final arrowTurns = relativeBearing / 360;
+    final distance = coordinateDistanceMeters(
+      _currentPosition.latitude,
+      _currentPosition.longitude,
+      widget.destination.latitude,
+      widget.destination.longitude,
+    );
+    final targetBearing = coordinateBearingDegrees(
+      _currentPosition.latitude,
+      _currentPosition.longitude,
+      widget.destination.latitude,
+      widget.destination.longitude,
+    );
+    final relativeBearing = _headingDegrees == null
+        ? 0.0
+        : normalizeDegrees(targetBearing - _headingDegrees!);
+    final arrived = distance <= _arrivalRadiusMeters;
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          CameraBackdrop(controller: controller, cameraReady: cameraReady),
-          Container(color: Colors.black.withOpacity(0.18)),
+          CameraBackdrop(
+            controller: _cameraController,
+            cameraReady: _cameraReady,
+          ),
+          Container(color: Colors.black.withValues(alpha: 0.08)),
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
               child: Column(
                 children: [
                   TopGuideBar(
                     destination: widget.destination,
                     distance: distance,
-                    bearing: targetBearing,
                   ),
                   const Spacer(),
-                  Transform.rotate(
-                    angle: arrowTurns * 2 * math.pi,
-                    child: const Icon(
-                      Icons.navigation_rounded,
-                      color: Colors.white,
-                      size: 132,
+                  if (_headingDegrees == null)
+                    const SensorLoadingState()
+                  else if (arrived)
+                    const ArrivalMarker()
+                  else
+                    PerspectiveNavigationArrow(
+                      relativeBearing: relativeBearing,
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    instructionFor(relativeBearing),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 26,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
                   const Spacer(),
-                  HeadingControl(
-                    headingDegrees: headingDegrees,
+                  NavigationPanel(
+                    distance: distance,
+                    relativeBearing: relativeBearing,
+                    headingDegrees: _headingDegrees,
                     targetBearing: targetBearing,
-                    onChanged: (value) => setState(() => headingDegrees = value),
+                    horizontalAccuracy: _currentPosition.accuracy,
+                    sensorProblem: _sensorProblem,
+                    arrived: arrived,
                   ),
                 ],
               ),
@@ -433,46 +980,37 @@ class CameraBackdrop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (controller == null || cameraReady == null) {
-      return const _CameraFallback();
+      return const CameraFallback();
     }
-
     return FutureBuilder<void>(
       future: cameraReady,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const _CameraFallback(message: 'Inicializando camara...');
+          return const CameraFallback(message: 'Inicializando cámara...');
         }
-
-        if (!controller!.value.isInitialized) {
-          return const _CameraFallback();
+        if (snapshot.hasError || !controller!.value.isInitialized) {
+          return const CameraFallback();
         }
-
         return CameraPreview(controller!);
       },
     );
   }
 }
 
-class _CameraFallback extends StatelessWidget {
-  const _CameraFallback({this.message = 'Camara no disponible en este dispositivo'});
+class CameraFallback extends StatelessWidget {
+  const CameraFallback({
+    super.key,
+    this.message = 'Cámara no disponible en este dispositivo',
+  });
 
   final String message;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF142857), Color(0xFF050914)],
-        ),
-      ),
+    return ColoredBox(
+      color: const Color(0xFF071022),
       child: Center(
-        child: Text(
-          message,
-          style: const TextStyle(color: Colors.white70),
-        ),
+        child: Text(message, style: const TextStyle(color: Colors.white70)),
       ),
     );
   }
@@ -483,45 +1021,46 @@ class TopGuideBar extends StatelessWidget {
     super.key,
     required this.destination,
     required this.distance,
-    required this.bearing,
   });
 
-  final IndoorPoint destination;
+  final InterestPoint destination;
   final double distance;
-  final double bearing;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.92),
-        borderRadius: BorderRadius.circular(22),
+        color: const Color(0xDD101419),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
-          IconButton.filledTonal(
+          IconButton(
+            tooltip: 'Volver',
             onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.arrow_back_rounded),
+            icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 4),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  destination.id,
+                  destination.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Color(0xFF0B1D4D),
+                    color: Colors.white,
                     fontWeight: FontWeight.w900,
-                    fontSize: 18,
+                    fontSize: 17,
                   ),
                 ),
                 Text(
-                  '${distance.toStringAsFixed(1)} m - ${cardinalFromDegrees(bearing)}',
+                  '${formatDistance(distance)} al destino',
                   style: const TextStyle(
-                    color: Color(0xFF607195),
+                    color: Colors.white70,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -534,60 +1073,31 @@ class TopGuideBar extends StatelessWidget {
   }
 }
 
-class HeadingControl extends StatelessWidget {
-  const HeadingControl({
-    super.key,
-    required this.headingDegrees,
-    required this.targetBearing,
-    required this.onChanged,
-  });
-
-  final double headingDegrees;
-  final double targetBearing;
-  final ValueChanged<double> onChanged;
+class SensorLoadingState extends StatelessWidget {
+  const SensorLoadingState({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.92),
-        borderRadius: BorderRadius.circular(22),
+        color: const Color(0xCC101419),
+        borderRadius: BorderRadius.circular(8),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Orientacion simulada',
-                style: TextStyle(
-                  color: Color(0xFF0B1D4D),
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              Text(
-                '${headingDegrees.toStringAsFixed(0)}°',
-                style: const TextStyle(
-                  color: Color(0xFF2F73FF),
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
+          SizedBox.square(
+            dimension: 18,
+            child: CircularProgressIndicator(
+              color: Colors.white,
+              strokeWidth: 2,
+            ),
           ),
-          Slider(
-            value: headingDegrees,
-            min: 0,
-            max: 359,
-            divisions: 359,
-            label: '${headingDegrees.toStringAsFixed(0)}°',
-            onChanged: onChanged,
-          ),
+          SizedBox(width: 12),
           Text(
-            'Destino real: ${targetBearing.toStringAsFixed(0)}°. Ajusta el slider para simular hacia donde apunta el telefono.',
-            style: const TextStyle(color: Color(0xFF607195), height: 1.3),
+            'Calibrando brújula...',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
           ),
         ],
       ),
@@ -595,17 +1105,289 @@ class HeadingControl extends StatelessWidget {
   }
 }
 
-double distanceBetween(IndoorPoint a, IndoorPoint b) {
-  final dx = b.x - a.x;
-  final dy = b.y - a.y;
-  return math.sqrt(dx * dx + dy * dy);
+class PerspectiveNavigationArrow extends StatelessWidget {
+  const PerspectiveNavigationArrow({
+    super.key,
+    required this.relativeBearing,
+  });
+
+  final double relativeBearing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: instructionFor(relativeBearing),
+      child: Transform(
+        alignment: Alignment.center,
+        transform: Matrix4.identity()
+          ..setEntry(3, 2, 0.0018)
+          ..rotateX(0.88),
+        child: Transform.rotate(
+          angle: relativeBearing * math.pi / 180,
+          child: const CustomPaint(
+            size: Size(230, 250),
+            painter: NavigationArrowPainter(),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-double bearingBetween(IndoorPoint a, IndoorPoint b) {
-  final dx = b.x - a.x;
-  final dy = b.y - a.y;
-  final radians = math.atan2(dx, dy);
-  return normalizeDegrees(radians * 180 / math.pi);
+class NavigationArrowPainter extends CustomPainter {
+  const NavigationArrowPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final shadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.35)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(size.width / 2, size.height * 0.79),
+        width: size.width * 0.78,
+        height: 34,
+      ),
+      shadowPaint,
+    );
+    for (var index = 2; index >= 0; index--) {
+      final scale = 0.72 + index * 0.12;
+      final tipY = 18.0 + index * 61;
+      final face = _chevronPath(size.width / 2, tipY, scale);
+      final extrusion = face.shift(Offset(0, 10 + index * 1.5));
+      canvas.drawPath(
+        extrusion,
+        Paint()
+          ..color = const Color(0xFF073F9E)
+          ..style = PaintingStyle.fill,
+      );
+      final facePaint = Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF83BCFF), Color(0xFF0865DC)],
+        ).createShader(face.getBounds())
+        ..style = PaintingStyle.fill;
+      canvas.drawPath(face, facePaint);
+      canvas.drawPath(
+        face,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.92)
+          ..strokeWidth = 3
+          ..style = PaintingStyle.stroke,
+      );
+    }
+  }
+
+  Path _chevronPath(double centerX, double tipY, double scale) {
+    final halfWidth = 80 * scale;
+    final depth = 61 * scale;
+    final thickness = 23 * scale;
+    return Path()
+      ..moveTo(centerX, tipY)
+      ..lineTo(centerX + halfWidth, tipY + depth)
+      ..lineTo(centerX + halfWidth - thickness, tipY + depth + thickness)
+      ..lineTo(centerX, tipY + thickness * 1.35)
+      ..lineTo(centerX - halfWidth + thickness, tipY + depth + thickness)
+      ..lineTo(centerX - halfWidth, tipY + depth)
+      ..close();
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class ArrivalMarker extends StatelessWidget {
+  const ArrivalMarker({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 150,
+      height: 150,
+      decoration: BoxDecoration(
+        color: _blue.withValues(alpha: 0.9),
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 5),
+        boxShadow: const [
+          BoxShadow(
+              color: Colors.black38, blurRadius: 24, offset: Offset(0, 12)),
+        ],
+      ),
+      child: const Icon(Icons.flag_rounded, color: Colors.white, size: 72),
+    );
+  }
+}
+
+class NavigationPanel extends StatelessWidget {
+  const NavigationPanel({
+    super.key,
+    required this.distance,
+    required this.relativeBearing,
+    required this.headingDegrees,
+    required this.targetBearing,
+    required this.horizontalAccuracy,
+    required this.sensorProblem,
+    required this.arrived,
+  });
+
+  final double distance;
+  final double relativeBearing;
+  final double? headingDegrees;
+  final double targetBearing;
+  final double horizontalAccuracy;
+  final String? sensorProblem;
+  final bool arrived;
+
+  @override
+  Widget build(BuildContext context) {
+    final instruction = headingDegrees == null
+        ? 'Esperando orientación'
+        : arrived
+            ? 'Llegaste al punto'
+            : instructionFor(relativeBearing);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xE6101419),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Transform.rotate(
+                  angle: (headingDegrees ?? 0) * -math.pi / 180,
+                  child: const Icon(
+                    Icons.navigation_rounded,
+                    color: Color(0xFF65A8FF),
+                    size: 34,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      formatDistance(distance),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      instruction,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 23,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF173557),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'AUTO',
+                  style: TextStyle(
+                    color: Color(0xFF8DC1FF),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  headingDegrees == null
+                      ? 'Brújula: esperando datos'
+                      : 'Brújula: ${headingDegrees!.toStringAsFixed(0)}°  ·  Destino: ${targetBearing.toStringAsFixed(0)}°',
+                  style: const TextStyle(color: Colors.white60, fontSize: 12),
+                ),
+              ),
+              Text(
+                'GPS ±${horizontalAccuracy.toStringAsFixed(0)} m',
+                style: TextStyle(
+                  color: horizontalAccuracy <= 10
+                      ? const Color(0xFF8BE3B1)
+                      : const Color(0xFFFFC66E),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          if (sensorProblem != null) ...[
+            const SizedBox(height: 9),
+            Text(
+              sensorProblem!,
+              style: const TextStyle(color: Color(0xFFFFC66E), fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+double coordinateDistanceMeters(
+  double latitudeA,
+  double longitudeA,
+  double latitudeB,
+  double longitudeB,
+) {
+  const earthRadiusMeters = 6371000.0;
+  final latitudeDelta = (latitudeB - latitudeA) * math.pi / 180;
+  final longitudeDelta = (longitudeB - longitudeA) * math.pi / 180;
+  final latitudeARadians = latitudeA * math.pi / 180;
+  final latitudeBRadians = latitudeB * math.pi / 180;
+  final haversine = math.sin(latitudeDelta / 2) * math.sin(latitudeDelta / 2) +
+      math.cos(latitudeARadians) *
+          math.cos(latitudeBRadians) *
+          math.sin(longitudeDelta / 2) *
+          math.sin(longitudeDelta / 2);
+  return earthRadiusMeters *
+      2 *
+      math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine));
+}
+
+double coordinateBearingDegrees(
+  double latitudeA,
+  double longitudeA,
+  double latitudeB,
+  double longitudeB,
+) {
+  final startLatitude = latitudeA * math.pi / 180;
+  final endLatitude = latitudeB * math.pi / 180;
+  final longitudeDelta = (longitudeB - longitudeA) * math.pi / 180;
+  final y = math.sin(longitudeDelta) * math.cos(endLatitude);
+  final x = math.cos(startLatitude) * math.sin(endLatitude) -
+      math.sin(startLatitude) *
+          math.cos(endLatitude) *
+          math.cos(longitudeDelta);
+  return normalizeDegrees(math.atan2(y, x) * 180 / math.pi);
 }
 
 double normalizeDegrees(double degrees) {
@@ -613,18 +1395,25 @@ double normalizeDegrees(double degrees) {
   return normalized < 0 ? normalized + 360 : normalized;
 }
 
-String cardinalFromDegrees(double degrees) {
-  const labels = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-  final index = ((normalizeDegrees(degrees) + 22.5) / 45).floor() % labels.length;
-  return labels[index];
+double shortestSignedAngle(double degrees) {
+  return (degrees + 540) % 360 - 180;
 }
 
 String instructionFor(double relativeBearing) {
-  final angle = normalizeDegrees(relativeBearing);
-  if (angle <= 15 || angle >= 345) return 'Sigue derecho';
-  if (angle < 75) return 'Gira un poco a la derecha';
-  if (angle < 135) return 'Gira a la derecha';
-  if (angle < 225) return 'Date la vuelta';
-  if (angle < 285) return 'Gira a la izquierda';
-  return 'Gira un poco a la izquierda';
+  final signed = shortestSignedAngle(relativeBearing);
+  final absolute = signed.abs();
+  if (absolute <= 12) return 'Sigue derecho';
+  if (absolute <= 50) {
+    return signed > 0 ? 'Ve hacia la derecha' : 'Ve hacia la izquierda';
+  }
+  if (absolute <= 125) {
+    return signed > 0 ? 'Gira a la derecha' : 'Gira a la izquierda';
+  }
+  return 'Date la vuelta';
+}
+
+String formatDistance(double meters) {
+  if (meters < 10) return '${meters.toStringAsFixed(1)} m';
+  if (meters < 1000) return '${meters.toStringAsFixed(0)} m';
+  return '${(meters / 1000).toStringAsFixed(1)} km';
 }

@@ -4,17 +4,7 @@ Este documento explica como instalar, ejecutar y usar el prototipo `unimet_ar` s
 
 ## 1. Que Es Este Proyecto
 
-`unimet_ar` es un prototipo Flutter para probar la parte visual de realidad aumentada del mapa UNIMET.
-
-Por ahora no usa coordenadas GPS reales ni rutas reales de la universidad. Usa coordenadas locales de prueba, como si tu casa fuera un mini edificio:
-
-```text
-CASA-ENTRADA: x=0, y=0
-CASA-SALA:    x=2, y=1
-CASA-COCINA:  x=5, y=1
-CASA-CUARTO:  x=5, y=-2
-CASA-BANO:    x=3, y=-2
-```
+`unimet_ar` es un prototipo Flutter para probar la parte visual de realidad aumentada del mapa UNIMET. Permite marcar ubicaciones reales como puntos de interes y volver a ellas con la camara, el GPS y la brujula del telefono.
 
 La app calcula:
 
@@ -75,8 +65,8 @@ Ese script:
 - genera Android/iOS,
 - restaura `lib/main.dart`,
 - restaura `pubspec.yaml`,
-- agrega permiso de camara en Android,
-- agrega permiso de camara en iOS,
+- agrega permisos de camara y ubicacion en Android,
+- agrega permisos de camara y ubicacion en iOS,
 - corre `flutter pub get`.
 
 ## 4. Activar Opciones De Desarrollador En Android
@@ -227,84 +217,40 @@ La primera ejecucion puede tardar bastante porque compila Android.
 
 ## 9. Como Usar El Prototipo
 
-Al abrir la app veras:
+Durante el primer uso aparecera una guia de dos pasos. Despues:
 
-```text
-UNIMET AR
-Estoy en
-Quiero ir a
-Ruta calculada
-Abrir guia AR
-```
+1. Toca el boton `+` de `Marca tu ubicacion actual`.
+2. Escribe un nombre y toca `Marcar aqui`.
+3. Acepta camara, ubicacion y ubicacion precisa cuando Android los pida.
+4. Alejate varios metros del punto. Para GPS, una prueba exterior suele ser mas estable que una dentro de una habitacion.
+5. Toca el punto para dejarlo seleccionado como unico destino.
+6. Toca `Guiarme a...`.
+7. Gira el telefono: la brujula y la flecha se orientaran automaticamente.
 
-Uso:
-
-1. En `Estoy en`, selecciona tu punto actual.
-2. En `Quiero ir a`, selecciona el destino.
-3. Revisa la distancia calculada.
-4. Toca `Abrir guia AR`.
-5. Acepta el permiso de camara si Android lo pide.
-6. Mira la pantalla con camara y flecha.
-7. Mueve el slider de `Orientacion simulada`.
-
-El slider simula hacia donde apunta el telefono.
-
-Cuando el slider coincide con la direccion correcta, la app dira:
-
-```text
-Sigue derecho
-```
-
-Si no coincide, dira cosas como:
-
-```text
-Gira a la derecha
-Gira a la izquierda
-Date la vuelta
-```
+Los puntos quedan guardados en ese telefono y pueden borrarse con el icono de papelera. La app impide registrar otro punto a menos de 2 metros de uno existente.
 
 ## 10. Que Validamos Con Esta Prueba
 
 Esta version sirve para validar:
 
-- flujo de seleccion de origen/destino,
-- calculo de distancia,
-- calculo de direccion,
+- registro y seleccion de un destino,
+- posicion actual mediante GPS,
+- calculo de distancia y direccion en vivo,
 - overlay sobre camara,
-- permiso de camara,
+- permisos de camara y ubicacion,
+- brujula automatica,
 - claridad de instrucciones visuales.
 
 Todavia no valida:
 
-- brujula real del telefono,
-- posicion interior automatica,
+- posicion interior con precision garantizada de 2 metros,
+- anclaje 3D real a superficies mediante ARCore/ARKit,
 - rutas reales de UNIMET,
 - conexion con backend de salones.
 
 ## 11. Prueba En Casa Recomendada
 
-Usa tu casa como edificio falso.
-
-Ejemplo:
-
-```text
-CASA-ENTRADA = puerta principal
-CASA-SALA = sala
-CASA-COCINA = cocina
-CASA-CUARTO = cuarto
-CASA-BANO = bano
-```
-
-Prueba estos flujos:
-
-```text
-Entrada -> Cocina
-Sala -> Cuarto
-Cuarto -> Bano
-Cocina -> Entrada
-```
-
-Lo importante es ver si la flecha y las instrucciones se sienten comprensibles.
+Marca un punto en la entrada o patio, alejate al menos 10 metros y abre la guia hacia ese punto. Comprueba que la distancia cambie al caminar y que la flecha rote al girar el telefono. Si la lectura oscila, separa el telefono de metal, imanes, computadoras o bocinas y muevelo dibujando un ocho para recalibrar la brujula.
 
 ## 12. Problemas Comunes
 
@@ -353,6 +299,13 @@ Ajustes > Apps > UNIMET AR > Permisos > Camara
 
 Debe estar permitido.
 
+### La Brujula No Responde O Apunta Mal
+
+- confirma que la ubicacion precisa este activa,
+- alejate de objetos metalicos o magneticos,
+- mueve el telefono lentamente en forma de ocho,
+- prueba fuera del edificio para comparar la lectura.
+
 ### Quiero Probar Sin Telefono
 
 Puedes generar soporte web:
@@ -368,26 +321,15 @@ Esto sirve para pantallas y logica. La camara puede comportarse distinto en nave
 
 Despues de probar en Android fisico, las siguientes mejoras naturales son:
 
-1. Reemplazar el slider por orientacion real del telefono.
-2. Conectar con el backend de salones en Vercel/Neon.
-3. Cargar salones reales como destinos.
-4. Agregar modo universidad y modo casa.
-5. Calcular rutas usando coordenadas reales/locales por salon.
-6. Mejorar la flecha AR con pasos e instrucciones por tramo.
+1. Conectar con el backend de salones en Vercel/Neon.
+2. Cargar salones reales como destinos.
+3. Calcular rutas interiores por pasillos, escaleras y pisos.
+4. Sustituir el overlay por anclajes 3D de ARCore/ARKit.
+5. Combinar GPS con puntos de referencia interiores para mejorar precision.
 
 ## 14. Archivos Que Normalmente Se Editan
 
-Para cambiar puntos de prueba:
-
-```text
-lib/main.dart
-```
-
-Busca:
-
-```text
-const demoPoints
-```
+La logica de puntos, ubicacion, brujula y guia esta en `lib/main.dart`.
 
 Para agregar dependencias:
 
