@@ -12,5 +12,13 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+
+    guard let registrar = engineBridge.pluginRegistry.registrar(
+      forPlugin: "UnimetARKitPlatformView"
+    ) else { return }
+    registrar.register(
+      UnimetARViewFactory(messenger: registrar.messenger()),
+      withId: "unimet_ar/arkit_view"
+    )
   }
 }

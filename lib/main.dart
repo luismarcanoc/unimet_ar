@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -451,6 +453,12 @@ class _HomeScreenState extends State<HomeScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void _openArKitTrial() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ArKitQrTestScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -471,6 +479,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: MarkPointPanel(busy: _working, onMark: _markPoint),
                     ),
                   ),
+                  if (Platform.isIOS)
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                      sliver: SliverToBoxAdapter(
+                        child: ArKitTrialPanel(onOpen: _openArKitTrial),
+                      ),
+                    ),
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
                     sliver: SliverToBoxAdapter(
@@ -697,6 +712,63 @@ class MarkPointPanel extends StatelessWidget {
   }
 }
 
+class ArKitTrialPanel extends StatelessWidget {
+  const ArKitTrialPanel({super.key, required this.onOpen});
+
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: _navy,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onOpen,
+        child: const Padding(
+          padding: EdgeInsets.all(16),
+          child: Row(
+            children: [
+              SizedBox.square(
+                dimension: 48,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Color(0xFF163875),
+                    borderRadius: BorderRadius.all(Radius.circular(8)),
+                  ),
+                  child:
+                      Icon(Icons.qr_code_scanner_rounded, color: Colors.white),
+                ),
+              ),
+              SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Probar QR + ARKit',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Ancla flechas 3D a un marcador físico.',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: Colors.white),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class EmptyPointsState extends StatelessWidget {
   const EmptyPointsState({super.key});
 
@@ -793,6 +865,349 @@ class PointTile extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class ArKitQrTestScreen extends StatefulWidget {
+  const ArKitQrTestScreen({super.key});
+
+  @override
+  State<ArKitQrTestScreen> createState() => _ArKitQrTestScreenState();
+}
+
+class _ArKitQrTestScreenState extends State<ArKitQrTestScreen> {
+  MethodChannel? _channel;
+  bool _markerDetected = false;
+  bool _hasError = false;
+  String _status = 'Iniciando ARKit...';
+  String _trackingState = 'Preparando seguimiento';
+
+  void _onPlatformViewCreated(int viewId) {
+    final channel = MethodChannel('unimet_ar/arkit_view_$viewId');
+    channel.setMethodCallHandler(_handleNativeEvent);
+    setState(() {
+      _channel = channel;
+      _status = 'Busca el marcador CASA-QR-001';
+    });
+  }
+
+  Future<void> _handleNativeEvent(MethodCall call) async {
+    if (!mounted) return;
+    final arguments = Map<String, dynamic>.from(
+      (call.arguments as Map?) ?? const <String, dynamic>{},
+    );
+    switch (call.method) {
+      case 'arReady':
+        setState(() {
+          _hasError = false;
+          _status = 'Busca el marcador CASA-QR-001';
+        });
+      case 'markerDetected':
+        setState(() {
+          _markerDetected = true;
+          _hasError = false;
+          _status = 'Marcador detectado. Sigue las flechas.';
+        });
+      case 'trackingState':
+        final state = arguments['state'] as String? ?? 'limitado';
+        setState(() => _trackingState = _trackingMessage(state));
+      case 'error':
+        setState(() {
+          _hasError = true;
+          _status =
+              arguments['message'] as String? ?? 'ARKit no está disponible.';
+        });
+    }
+  }
+
+  String _trackingMessage(String state) {
+    return switch (state) {
+      'normal' => 'Seguimiento estable',
+      'inicializando' => 'Inicializando el entorno',
+      'movimiento_excesivo' => 'Mueve el iPhone más lentamente',
+      'pocos_detalles' => 'Apunta hacia una zona con más detalles',
+      'relocalizando' => 'Recuperando la ubicación',
+      'no_disponible' => 'Seguimiento no disponible',
+      _ => 'Seguimiento limitado',
+    };
+  }
+
+  Future<void> _resetSession() async {
+    setState(() {
+      _markerDetected = false;
+      _hasError = false;
+      _status = 'Reiniciando ARKit...';
+    });
+    await _channel?.invokeMethod<void>('reset');
+  }
+
+  Future<void> _showInstructions() {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Preparar el marcador'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('1. Imprime CASA-QR-001 exactamente a 20 x 20 cm.'),
+            SizedBox(height: 10),
+            Text(
+                '2. Pégalo plano y vertical, con su centro a 1,50 m del piso.'),
+            SizedBox(height: 10),
+            Text('3. Apunta la cámara al QR desde 1 o 2 metros.'),
+            SizedBox(height: 10),
+            Text(
+                '4. Cuando aparezcan las flechas, camina hacia la derecha del QR.'),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _channel?.setMethodCallHandler(null);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned.fill(
+            child: _ArKitPlatformViewConnector(
+              onCreated: _onPlatformViewCreated,
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              child: Column(
+                children: [
+                  _ArKitTopBar(
+                    onBack: () => Navigator.of(context).pop(),
+                    onHelp: _showInstructions,
+                    onReset: _resetSession,
+                  ),
+                  const Spacer(),
+                  if (!_markerDetected && !_hasError) const _QrScanReticle(),
+                  const Spacer(),
+                  _ArKitStatusPanel(
+                    status: _status,
+                    trackingState: _trackingState,
+                    markerDetected: _markerDetected,
+                    hasError: _hasError,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ArKitPlatformViewConnector extends StatelessWidget {
+  const _ArKitPlatformViewConnector({required this.onCreated});
+
+  final PlatformViewCreatedCallback onCreated;
+
+  @override
+  Widget build(BuildContext context) {
+    return UiKitView(
+      viewType: 'unimet_ar/arkit_view',
+      layoutDirection: TextDirection.ltr,
+      creationParams: const <String, dynamic>{
+        'markerId': 'CASA-QR-001',
+        'physicalWidth': 0.20,
+        'markerCenterHeight': 1.50,
+        'routeLength': 3.0,
+      },
+      creationParamsCodec: const StandardMessageCodec(),
+      onPlatformViewCreated: onCreated,
+    );
+  }
+}
+
+class _ArKitTopBar extends StatelessWidget {
+  const _ArKitTopBar({
+    required this.onBack,
+    required this.onHelp,
+    required this.onReset,
+  });
+
+  final VoidCallback onBack;
+  final VoidCallback onHelp;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xDD101419),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: 'Volver',
+            onPressed: onBack,
+            icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+          ),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Prueba QR + ARKit',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Text(
+                  'Marcador de 20 cm · ruta de 3 m',
+                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Instrucciones',
+            onPressed: onHelp,
+            icon: const Icon(Icons.help_outline_rounded, color: Colors.white),
+          ),
+          IconButton(
+            tooltip: 'Reiniciar ARKit',
+            onPressed: onReset,
+            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QrScanReticle extends StatelessWidget {
+  const _QrScanReticle();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: 230,
+      child: CustomPaint(painter: _QrReticlePainter()),
+    );
+  }
+}
+
+class _QrReticlePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    const length = 44.0;
+    final paint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final corners = <Path>[
+      Path()
+        ..moveTo(0, length)
+        ..lineTo(0, 0)
+        ..lineTo(length, 0),
+      Path()
+        ..moveTo(size.width - length, 0)
+        ..lineTo(size.width, 0)
+        ..lineTo(size.width, length),
+      Path()
+        ..moveTo(size.width, size.height - length)
+        ..lineTo(size.width, size.height)
+        ..lineTo(size.width - length, size.height),
+      Path()
+        ..moveTo(length, size.height)
+        ..lineTo(0, size.height)
+        ..lineTo(0, size.height - length),
+    ];
+    for (final corner in corners) {
+      canvas.drawPath(corner, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _ArKitStatusPanel extends StatelessWidget {
+  const _ArKitStatusPanel({
+    required this.status,
+    required this.trackingState,
+    required this.markerDetected,
+    required this.hasError,
+  });
+
+  final String status;
+  final String trackingState;
+  final bool markerDetected;
+  final bool hasError;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = hasError
+        ? const Color(0xFFFFB4A9)
+        : markerDetected
+            ? const Color(0xFF82E6AC)
+            : const Color(0xFF8DC1FF);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xE6101419),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            hasError
+                ? Icons.error_outline_rounded
+                : markerDetected
+                    ? Icons.check_circle_outline_rounded
+                    : Icons.qr_code_scanner_rounded,
+            color: color,
+            size: 34,
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  status,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  trackingState,
+                  style: TextStyle(color: color, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -72,6 +72,30 @@ El proyecto ya tiene:
 - Tutorial emergente durante el primer uso.
 - Brujula automatica y seguimiento de ubicacion en vivo.
 - Guia visual con flecha tridimensional sobre la camara.
+- Prueba nativa iOS con QR, ARKit World Tracking y flechas 3D ancladas.
+
+## Prueba QR + ARKit En iPhone
+
+La hoja A4 lista para imprimir esta en:
+
+```text
+output/pdf/CASA_QR_001_20CM.pdf
+```
+
+Abre ese archivo en una computadora, imprime al 100% y desactiva `Ajustar a pagina`.
+Confirma que el QR mida exactamente 20 x 20 cm y que la linea de control mida 5 cm.
+Pegalo plano y vertical, con el centro a 1,50 m del piso. Tambien se conservan las
+versiones PNG, SVG y HTML en `docs/markers/`.
+
+En el iPhone:
+
+1. Abre `Probar QR + ARKit`.
+2. Mueve el telefono lentamente mientras ARKit reconoce el entorno.
+3. Apunta al marcador `CASA-QR-001` desde 1 o 2 metros.
+4. Al detectarlo apareceran cuatro flechas sobre el piso hacia la derecha del QR.
+
+Esta prueba solo aparece en iOS. La ruta mide 3 metros y sirve para comprobar
+anclaje, escala y estabilidad antes de incorporar los salones reales.
 
 Para probarlo en telefono real, conecta un Android con Depuracion USB activa y corre:
 

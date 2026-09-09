@@ -13,6 +13,25 @@ Copy-Item -LiteralPath (Join-Path $root "pubspec.yaml") -Destination (Join-Path 
 Copy-Item -LiteralPath (Join-Path $root "analysis_options.yaml") -Destination (Join-Path $backup "analysis_options.yaml")
 Copy-Item -LiteralPath (Join-Path $root "README.md") -Destination (Join-Path $backup "README.md")
 
+$iosBackup = Join-Path $backup "ios_custom"
+New-Item -ItemType Directory -Path $iosBackup | Out-Null
+$iosCustomFiles = @(
+  "ios\Runner\AppDelegate.swift",
+  "ios\Runner\NativeARView.swift",
+  "ios\Runner.xcodeproj\project.pbxproj"
+)
+foreach ($relativePath in $iosCustomFiles) {
+  $source = Join-Path $root $relativePath
+  if (Test-Path $source) {
+    Copy-Item -LiteralPath $source -Destination (Join-Path $iosBackup ([IO.Path]::GetFileName($source)))
+  }
+}
+
+$markerAsset = Join-Path $root "ios\Runner\Assets.xcassets\TestARMarker.imageset"
+if (Test-Path $markerAsset) {
+  Copy-Item -LiteralPath $markerAsset -Destination (Join-Path $iosBackup "TestARMarker.imageset") -Recurse
+}
+
 Push-Location $root
 try {
   flutter create --platforms android,ios --project-name unimet_ar .
@@ -21,6 +40,24 @@ try {
   Copy-Item -LiteralPath (Join-Path $backup "pubspec.yaml") -Destination (Join-Path $root "pubspec.yaml") -Force
   Copy-Item -LiteralPath (Join-Path $backup "analysis_options.yaml") -Destination (Join-Path $root "analysis_options.yaml") -Force
   Copy-Item -LiteralPath (Join-Path $backup "README.md") -Destination (Join-Path $root "README.md") -Force
+
+  $appDelegateBackup = Join-Path $iosBackup "AppDelegate.swift"
+  if (Test-Path $appDelegateBackup) {
+    Copy-Item -LiteralPath $appDelegateBackup -Destination (Join-Path $root "ios\Runner\AppDelegate.swift") -Force
+  }
+  $nativeArBackup = Join-Path $iosBackup "NativeARView.swift"
+  if (Test-Path $nativeArBackup) {
+    Copy-Item -LiteralPath $nativeArBackup -Destination (Join-Path $root "ios\Runner\NativeARView.swift") -Force
+  }
+  $xcodeProjectBackup = Join-Path $iosBackup "project.pbxproj"
+  if (Test-Path $xcodeProjectBackup) {
+    Copy-Item -LiteralPath $xcodeProjectBackup -Destination (Join-Path $root "ios\Runner.xcodeproj\project.pbxproj") -Force
+  }
+  $markerAssetBackup = Join-Path $iosBackup "TestARMarker.imageset"
+  $markerAssetDestination = Join-Path $root "ios\Runner\Assets.xcassets\TestARMarker.imageset"
+  if ((Test-Path $markerAssetBackup) -and -not (Test-Path $markerAssetDestination)) {
+    Copy-Item -LiteralPath $markerAssetBackup -Destination $markerAssetDestination -Recurse -Force
+  }
 
   $androidManifest = Join-Path $root "android\app\src\main\AndroidManifest.xml"
   if (Test-Path $androidManifest) {

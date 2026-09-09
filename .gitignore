@@ -6,6 +6,7 @@
 .pub/
 build/
 coverage/
+tmp/
 
 android/.gradle/
 android/local.properties

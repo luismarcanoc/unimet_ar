@@ -260,6 +260,31 @@ Selecciona `While Using the App` y activa `Precise Location`. La guia usa GPS pa
 
 Los puntos quedan guardados localmente en ese iPhone y se pueden borrar desde la lista.
 
+### Prueba Nativa QR + ARKit
+
+Esta prueba no usa GPS ni la brujula para colocar las flechas. Usa ARKit World Tracking y un marcador visual conocido.
+
+1. En la Mac abre `output/pdf/CASA_QR_001_20CM.pdf`.
+2. Imprime al 100%, sin usar `Fit to page` o `Ajustar a pagina`.
+3. Mide el QR completo: debe ser exactamente de 20 x 20 cm. La linea inferior debe medir 5 cm.
+4. Pegalo plano y vertical, con el centro a 1,50 m del piso.
+5. Actualiza la app en el iPhone con `flutter run --release`.
+6. En la pantalla principal toca `Probar QR + ARKit`.
+7. Mueve el iPhone lentamente mientras ARKit reconoce el espacio.
+8. Apunta al QR desde una distancia aproximada de 1 a 2 metros.
+9. Cuando el marcador se ilumine en verde, apareceran cuatro flechas azules hacia la derecha del QR y un aro verde al final de una ruta de 3 metros.
+
+El boton de reinicio borra solamente la sesion AR actual y vuelve a buscar el marcador. No elimina puntos guardados ni otros datos de la app.
+
+Si no detecta el marcador:
+
+- confirma que la impresion mida 20 cm,
+- evita reflejos o sombras fuertes,
+- manten todo el QR visible,
+- mueve el telefono lentamente,
+- prueba desde un poco mas lejos,
+- confirma que estas usando el archivo incluido en este repo.
+
 ## 11. Desarrollo Windows + Mac
 
 Pueden trabajar asi:
