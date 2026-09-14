@@ -4,17 +4,21 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'salon_csv.dart';
+
 const _blue = Color(0xFF1769E8);
 const _navy = Color(0xFF081B49);
 const _muted = Color(0xFF607195);
 const _background = Color(0xFFF3F7FF);
 const _savedPointsKey = 'saved_interest_points_v1';
+const _importedSalonsKey = 'imported_salons_v1';
 const _selectedPointKey = 'selected_interest_point_v1';
 const _onboardingKey = 'onboarding_seen_v1';
 const _duplicateRadiusMeters = 2.0;
@@ -22,6 +26,7 @@ const _arrivalRadiusMeters = 2.0;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   List<CameraDescription> cameras = [];
   try {
     cameras = await availableCameras();
@@ -60,6 +65,11 @@ class InterestPoint {
     required this.longitude,
     required this.accuracy,
     required this.createdAt,
+    this.floor = '',
+    this.reference = '',
+    this.altitude,
+    this.altitudeAccuracy,
+    this.isImported = false,
   });
 
   final String id;
@@ -68,6 +78,11 @@ class InterestPoint {
   final double longitude;
   final double accuracy;
   final DateTime createdAt;
+  final String floor;
+  final String reference;
+  final double? altitude;
+  final double? altitudeAccuracy;
+  final bool isImported;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -76,6 +91,11 @@ class InterestPoint {
         'longitude': longitude,
         'accuracy': accuracy,
         'createdAt': createdAt.toIso8601String(),
+        'floor': floor,
+        'reference': reference,
+        'altitude': altitude,
+        'altitudeAccuracy': altitudeAccuracy,
+        'isImported': isImported,
       };
 
   factory InterestPoint.fromJson(Map<String, dynamic> json) {
@@ -86,6 +106,11 @@ class InterestPoint {
       longitude: (json['longitude'] as num).toDouble(),
       accuracy: (json['accuracy'] as num).toDouble(),
       createdAt: DateTime.parse(json['createdAt'] as String),
+      floor: json['floor'] as String? ?? '',
+      reference: json['reference'] as String? ?? '',
+      altitude: (json['altitude'] as num?)?.toDouble(),
+      altitudeAccuracy: (json['altitudeAccuracy'] as num?)?.toDouble(),
+      isImported: json['isImported'] as bool? ?? false,
     );
   }
 }
@@ -101,16 +126,29 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final SharedPreferencesAsync _preferences = SharedPreferencesAsync();
+  final TextEditingController _salonSearchController = TextEditingController();
   List<InterestPoint> _points = [];
+  List<InterestPoint> _salons = [];
   String? _selectedPointId;
+  String _salonQuery = '';
   bool _loading = true;
   bool _working = false;
 
   InterestPoint? get _selectedPoint {
-    for (final point in _points) {
+    for (final point in [..._points, ..._salons]) {
       if (point.id == _selectedPointId) return point;
     }
     return null;
+  }
+
+  List<InterestPoint> get _filteredSalons {
+    final query = _salonQuery.trim().toLowerCase();
+    if (query.isEmpty) return _salons;
+    return _salons.where((salon) {
+      return salon.name.toLowerCase().contains(query) ||
+          salon.floor.toLowerCase().contains(query) ||
+          salon.reference.toLowerCase().contains(query);
+    }).toList();
   }
 
   @override
@@ -122,11 +160,20 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    _salonSearchController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadSavedState() async {
     final rawPoints =
         await _preferences.getStringList(_savedPointsKey) ?? <String>[];
+    final rawSalons =
+        await _preferences.getStringList(_importedSalonsKey) ?? <String>[];
     final selectedPointId = await _preferences.getString(_selectedPointKey);
     final points = <InterestPoint>[];
+    final salons = <InterestPoint>[];
     for (final rawPoint in rawPoints) {
       try {
         points.add(
@@ -138,12 +185,25 @@ class _HomeScreenState extends State<HomeScreen> {
         // Ignore malformed local records instead of blocking the app.
       }
     }
+    for (final rawSalon in rawSalons) {
+      try {
+        salons.add(
+          InterestPoint.fromJson(
+            jsonDecode(rawSalon) as Map<String, dynamic>,
+          ),
+        );
+      } catch (_) {
+        // Ignore malformed imports so one row cannot block the app.
+      }
+    }
     if (!mounted) return;
     setState(() {
       _points = points;
-      _selectedPointId = points.any((point) => point.id == selectedPointId)
-          ? selectedPointId
-          : null;
+      _salons = salons;
+      _selectedPointId =
+          [...points, ...salons].any((point) => point.id == selectedPointId)
+              ? selectedPointId
+              : null;
       _loading = false;
     });
   }
@@ -179,6 +239,12 @@ class _HomeScreenState extends State<HomeScreen> {
               number: '2',
               text:
                   'Aléjate lo suficiente del punto, selecciónalo como destino y abre la guía para que la flecha te lleve de vuelta.',
+            ),
+            SizedBox(height: 18),
+            OnboardingStep(
+              number: '3',
+              text:
+                  'Para probar salones reales, importa el CSV del formulario, busca el aula y selecciónala como destino.',
             ),
             SizedBox(height: 16),
             Text(
@@ -372,11 +438,126 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _importSalonsCsv() async {
+    final pickerResult = await FilePicker.platform.pickFiles(
+      dialogTitle: 'Selecciona el CSV de salones',
+      type: FileType.custom,
+      allowedExtensions: const ['csv'],
+      allowMultiple: false,
+      withData: true,
+    );
+    if (pickerResult == null || pickerResult.files.isEmpty || !mounted) return;
+    final file = pickerResult.files.single;
+
+    setState(() => _working = true);
+    try {
+      final bytes = file.bytes;
+      if (bytes == null) {
+        throw const SalonCsvFormatException(
+          'No se pudo acceder al contenido del archivo.',
+        );
+      }
+      if (bytes.length > 5 * 1024 * 1024) {
+        throw const SalonCsvFormatException(
+          'El CSV supera el límite de 5 MB.',
+        );
+      }
+      final result = parseSalonCsv(utf8.decode(bytes));
+      final importedAt = DateTime.now();
+      final uniqueSalons = <String, InterestPoint>{};
+      for (final record in result.records) {
+        final id = 'csv:${record.id}';
+        uniqueSalons[id] = InterestPoint(
+          id: id,
+          name: record.name,
+          latitude: record.latitude,
+          longitude: record.longitude,
+          accuracy: record.accuracy,
+          createdAt: importedAt,
+          floor: record.floor,
+          reference: record.reference,
+          altitude: record.altitude,
+          altitudeAccuracy: record.altitudeAccuracy,
+          isImported: true,
+        );
+      }
+
+      final salons = uniqueSalons.values.toList()
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      final selectedWasImported = _selectedPoint?.isImported == true;
+      setState(() {
+        _salons = salons;
+        if (selectedWasImported &&
+            !_salons.any((salon) => salon.id == _selectedPointId)) {
+          _selectedPointId = null;
+        }
+      });
+      await _saveImportedSalons();
+      final skipped = result.skippedRows == 0
+          ? ''
+          : ' Se omitieron ${result.skippedRows} filas inválidas.';
+      _showMessage('${salons.length} salones importados.$skipped');
+    } on FormatException {
+      _showMessage('El archivo no usa codificación UTF-8 válida.');
+    } on SalonCsvFormatException catch (error) {
+      _showMessage(error.message);
+    } catch (_) {
+      _showMessage('No se pudo leer el CSV seleccionado.');
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  Future<void> _saveImportedSalons() async {
+    await _preferences.setStringList(
+      _importedSalonsKey,
+      _salons.map((salon) => jsonEncode(salon.toJson())).toList(),
+    );
+    await _saveSelectedPoint();
+  }
+
+  Future<void> _clearImportedSalons() async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Quitar salones importados'),
+            content: const Text(
+              'Se quitará la copia del CSV guardada en este teléfono. Tus puntos personales no se borrarán.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Quitar'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed) return;
+    setState(() {
+      final selectedWasImported = _selectedPoint?.isImported == true;
+      _salons = [];
+      _salonQuery = '';
+      _salonSearchController.clear();
+      if (selectedWasImported) _selectedPointId = null;
+    });
+    await _preferences.remove(_importedSalonsKey);
+    await _saveSelectedPoint();
+  }
+
   Future<void> _savePoints() async {
     await _preferences.setStringList(
       _savedPointsKey,
       _points.map((point) => jsonEncode(point.toJson())).toList(),
     );
+    await _saveSelectedPoint();
+  }
+
+  Future<void> _saveSelectedPoint() async {
     if (_selectedPointId == null) {
       await _preferences.remove(_selectedPointKey);
     } else {
@@ -479,6 +660,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: MarkPointPanel(busy: _working, onMark: _markPoint),
                     ),
                   ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+                    sliver: SliverToBoxAdapter(
+                      child: SalonCsvPanel(
+                        busy: _working,
+                        salonCount: _salons.length,
+                        onImport: _importSalonsCsv,
+                        onClear: _clearImportedSalons,
+                      ),
+                    ),
+                  ),
                   if (Platform.isIOS)
                     SliverPadding(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
@@ -489,26 +681,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
                     sliver: SliverToBoxAdapter(
-                      child: Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              'Puntos guardados',
-                              style: TextStyle(
-                                color: _navy,
-                                fontSize: 20,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            '${_points.length}',
-                            style: const TextStyle(
-                              color: _muted,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
+                      child: SectionHeader(
+                        title: 'Puntos personales',
+                        count: _points.length,
                       ),
                     ),
                   ),
@@ -534,6 +709,73 @@ class _HomeScreenState extends State<HomeScreen> {
                         },
                       ),
                     ),
+                  if (_salons.isNotEmpty) ...[
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 10),
+                      sliver: SliverToBoxAdapter(
+                        child: SectionHeader(
+                          title: 'Salones UNIMET',
+                          count: _salons.length,
+                        ),
+                      ),
+                    ),
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                      sliver: SliverToBoxAdapter(
+                        child: TextField(
+                          controller: _salonSearchController,
+                          onChanged: (value) =>
+                              setState(() => _salonQuery = value),
+                          textInputAction: TextInputAction.search,
+                          decoration: InputDecoration(
+                            hintText: 'Buscar salón, piso o referencia',
+                            prefixIcon: const Icon(Icons.search_rounded),
+                            suffixIcon: _salonQuery.isEmpty
+                                ? null
+                                : IconButton(
+                                    tooltip: 'Limpiar búsqueda',
+                                    onPressed: () {
+                                      _salonSearchController.clear();
+                                      setState(() => _salonQuery = '');
+                                    },
+                                    icon: const Icon(Icons.close_rounded),
+                                  ),
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: const OutlineInputBorder(
+                              borderRadius:
+                                  BorderRadius.all(Radius.circular(8)),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (_filteredSalons.isEmpty)
+                      const SliverPadding(
+                        padding: EdgeInsets.symmetric(horizontal: 20),
+                        sliver: SliverToBoxAdapter(
+                          child: SearchEmptyState(),
+                        ),
+                      )
+                    else
+                      SliverPadding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        sliver: SliverList.separated(
+                          itemCount: _filteredSalons.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (context, index) {
+                            final salon = _filteredSalons[index];
+                            return PointTile(
+                              point: salon,
+                              selected: salon.id == _selectedPointId,
+                              onSelect: () => _selectPoint(salon),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
                   const SliverToBoxAdapter(child: SizedBox(height: 110)),
                 ],
               ),
@@ -632,7 +874,7 @@ class HomeHeader extends StatelessWidget {
               ),
               SizedBox(height: 5),
               Text(
-                'Marca un lugar y deja que el teléfono te guíe de vuelta.',
+                'Marca un lugar o importa salones y elige tu destino.',
                 style: TextStyle(color: _muted, fontSize: 15, height: 1.35),
               ),
             ],
@@ -708,6 +950,120 @@ class MarkPointPanel extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class SalonCsvPanel extends StatelessWidget {
+  const SalonCsvPanel({
+    super.key,
+    required this.busy,
+    required this.salonCount,
+    required this.onImport,
+    required this.onClear,
+  });
+
+  final bool busy;
+  final int salonCount;
+  final VoidCallback onImport;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF6F3),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFB9DDD4)),
+      ),
+      child: Row(
+        children: [
+          const SizedBox.square(
+            dimension: 46,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Color(0xFFD2ECE6),
+                borderRadius: BorderRadius.all(Radius.circular(8)),
+              ),
+              child: Icon(Icons.apartment_rounded, color: Color(0xFF176C61)),
+            ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  salonCount == 0
+                      ? 'Cargar salones UNIMET'
+                      : '$salonCount salones cargados',
+                  style: const TextStyle(
+                    color: _navy,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  salonCount == 0
+                      ? 'Importa el CSV del formulario de registro.'
+                      : 'Puedes reemplazar el registro con un CSV nuevo.',
+                  style: const TextStyle(color: _muted, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          if (salonCount > 0)
+            IconButton(
+              tooltip: 'Quitar salones importados',
+              onPressed: busy ? null : onClear,
+              icon: const Icon(Icons.delete_outline_rounded),
+            ),
+          IconButton.filled(
+            tooltip: salonCount == 0 ? 'Importar CSV' : 'Reemplazar CSV',
+            onPressed: busy ? null : onImport,
+            icon: Icon(
+              salonCount == 0 ? Icons.file_upload_outlined : Icons.sync_rounded,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class SectionHeader extends StatelessWidget {
+  const SectionHeader({
+    super.key,
+    required this.title,
+    required this.count,
+  });
+
+  final String title;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: _navy,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        Text(
+          '$count',
+          style: const TextStyle(
+            color: _muted,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -801,19 +1157,47 @@ class EmptyPointsState extends StatelessWidget {
   }
 }
 
+class SearchEmptyState extends StatelessWidget {
+  const SearchEmptyState({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFDCE5F3)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.search_off_rounded, color: _muted),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'No hay salones que coincidan con la búsqueda.',
+              style: TextStyle(color: _muted),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class PointTile extends StatelessWidget {
   const PointTile({
     super.key,
     required this.point,
     required this.selected,
     required this.onSelect,
-    required this.onDelete,
+    this.onDelete,
   });
 
   final InterestPoint point;
   final bool selected;
   final VoidCallback onSelect;
-  final VoidCallback onDelete;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -851,17 +1235,32 @@ class PointTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      'Precisión al marcar: ±${point.accuracy.toStringAsFixed(0)} m',
+                      point.isImported
+                          ? [
+                              'Piso ${point.floor}',
+                              if (point.reference.isNotEmpty) point.reference,
+                              if (point.accuracy > 0)
+                                'GPS ±${point.accuracy.toStringAsFixed(0)} m',
+                            ].join(' · ')
+                          : 'Precisión al marcar: ±${point.accuracy.toStringAsFixed(0)} m',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(color: _muted, fontSize: 12),
                     ),
                   ],
                 ),
               ),
-              IconButton(
-                tooltip: 'Borrar ${point.name}',
-                onPressed: onDelete,
-                icon: const Icon(Icons.delete_outline_rounded),
-              ),
+              if (onDelete != null)
+                IconButton(
+                  tooltip: 'Borrar ${point.name}',
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline_rounded),
+                )
+              else
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 10),
+                  child: Icon(Icons.chevron_right_rounded, color: _muted),
+                ),
             ],
           ),
         ),
@@ -1236,13 +1635,18 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
   StreamSubscription<CompassEvent>? _compassSubscription;
   late Position _currentPosition;
   double? _headingDegrees;
+  double? _compassAccuracyDegrees;
+  bool _nativeArHeadingActive = false;
+  bool _floorDetected = false;
+  String _headingSource = 'Brújula';
+  String _arTrackingState = 'Inicializando ARKit';
   String? _sensorProblem;
 
   @override
   void initState() {
     super.initState();
     _currentPosition = widget.initialPosition;
-    _initializeCamera();
+    if (!Platform.isIOS) _initializeCamera();
     _startLiveTracking();
   }
 
@@ -1287,16 +1691,25 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
     }
     _compassSubscription = compassEvents.listen(
       (event) {
-        final newHeading = event.heading;
-        if (newHeading == null || !mounted) return;
+        final newHeading = preferredCameraHeading(
+          isIOS: Platform.isIOS,
+          heading: event.heading,
+          headingForCameraMode: event.headingForCameraMode,
+        );
+        if (!mounted) return;
         setState(() {
-          if (_headingDegrees == null) {
-            _headingDegrees = normalizeDegrees(newHeading);
-          } else {
-            final delta = shortestSignedAngle(newHeading - _headingDegrees!);
-            _headingDegrees = normalizeDegrees(_headingDegrees! + delta * 0.22);
+          _compassAccuracyDegrees = event.accuracy;
+          if (!_nativeArHeadingActive && newHeading != null) {
+            _headingDegrees = smoothHeadingDegrees(
+              previous: _headingDegrees,
+              next: newHeading,
+              factor: 0.22,
+            );
+            _headingSource = Platform.isIOS ? 'Cámara + brújula' : 'Brújula';
           }
-          _sensorProblem = null;
+          _sensorProblem = event.accuracy != null && event.accuracy! > 25
+              ? 'La brújula necesita calibración. Aléjate de metal y mueve el teléfono en forma de 8.'
+              : null;
         });
       },
       onError: (_) {
@@ -1305,6 +1718,40 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
         }
       },
     );
+  }
+
+  Future<void> _handleNavigationArEvent(
+    String method,
+    Map<String, dynamic> arguments,
+  ) async {
+    if (!mounted) return;
+    switch (method) {
+      case 'cameraHeading':
+        final heading = (arguments['heading'] as num?)?.toDouble();
+        if (heading == null) return;
+        setState(() {
+          _nativeArHeadingActive = true;
+          _headingDegrees = smoothHeadingDegrees(
+            previous: _headingDegrees,
+            next: heading,
+            factor: 0.28,
+          );
+          _headingSource = 'ARKit';
+        });
+      case 'floorDetected':
+        setState(() => _floorDetected = true);
+      case 'trackingState':
+        final state = arguments['state'] as String? ?? 'limitado';
+        setState(() => _arTrackingState = trackingStateMessage(state));
+      case 'arReady':
+        setState(() => _arTrackingState = 'Buscando el piso');
+      case 'error':
+        setState(() {
+          _arTrackingState = 'ARKit no disponible';
+          _sensorProblem =
+              arguments['message'] as String? ?? 'No se pudo iniciar ARKit.';
+        });
+    }
   }
 
   @override
@@ -1331,18 +1778,29 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
     );
     final relativeBearing = _headingDegrees == null
         ? 0.0
-        : normalizeDegrees(targetBearing - _headingDegrees!);
+        : relativeBearingDegrees(targetBearing, _headingDegrees!);
     final arrived = distance <= _arrivalRadiusMeters;
+    final bearingReliable = navigationBearingIsReliable(
+      distance: distance,
+      horizontalAccuracy: _currentPosition.accuracy,
+    );
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          CameraBackdrop(
-            controller: _cameraController,
-            cameraReady: _cameraReady,
-          ),
+          if (Platform.isIOS)
+            DirectionalArBackdrop(
+              targetBearing: targetBearing,
+              distance: distance,
+              onEvent: _handleNavigationArEvent,
+            )
+          else
+            CameraBackdrop(
+              controller: _cameraController,
+              cameraReady: _cameraReady,
+            ),
           Container(color: Colors.black.withValues(alpha: 0.08)),
           SafeArea(
             child: Padding(
@@ -1358,23 +1816,188 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
                     const SensorLoadingState()
                   else if (arrived)
                     const ArrivalMarker()
-                  else
+                  else if (!Platform.isIOS)
                     PerspectiveNavigationArrow(
                       relativeBearing: relativeBearing,
-                    ),
+                    )
+                  else if (!_floorDetected)
+                    ArFloorSearchState(trackingState: _arTrackingState)
+                  else
+                    const ArRouteReadyBadge(),
                   const Spacer(),
                   NavigationPanel(
                     distance: distance,
                     relativeBearing: relativeBearing,
                     headingDegrees: _headingDegrees,
+                    compassAccuracyDegrees: _compassAccuracyDegrees,
+                    headingSource: _headingSource,
                     targetBearing: targetBearing,
                     horizontalAccuracy: _currentPosition.accuracy,
                     sensorProblem: _sensorProblem,
                     arrived: arrived,
+                    bearingReliable: bearingReliable,
+                    arTrackingState: Platform.isIOS ? _arTrackingState : null,
+                    floorDetected: Platform.isIOS ? _floorDetected : null,
                   ),
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+typedef NavigationArEvent = Future<void> Function(
+  String method,
+  Map<String, dynamic> arguments,
+);
+
+class DirectionalArBackdrop extends StatefulWidget {
+  const DirectionalArBackdrop({
+    super.key,
+    required this.targetBearing,
+    required this.distance,
+    required this.onEvent,
+  });
+
+  final double targetBearing;
+  final double distance;
+  final NavigationArEvent onEvent;
+
+  @override
+  State<DirectionalArBackdrop> createState() => _DirectionalArBackdropState();
+}
+
+class _DirectionalArBackdropState extends State<DirectionalArBackdrop> {
+  MethodChannel? _channel;
+  double? _lastSentBearing;
+  double? _lastSentDistance;
+
+  void _onCreated(int viewId) {
+    final channel = MethodChannel('unimet_ar/arkit_view_$viewId');
+    channel.setMethodCallHandler((call) async {
+      final arguments = Map<String, dynamic>.from(
+        (call.arguments as Map?) ?? const <String, dynamic>{},
+      );
+      await widget.onEvent(call.method, arguments);
+    });
+    _channel = channel;
+    unawaited(_sendNavigationUpdate());
+  }
+
+  @override
+  void didUpdateWidget(covariant DirectionalArBackdrop oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final bearingChanged = _lastSentBearing == null ||
+        shortestSignedAngle(widget.targetBearing - _lastSentBearing!).abs() >=
+            2;
+    final distanceChanged = _lastSentDistance == null ||
+        (widget.distance - _lastSentDistance!).abs() >= 0.5;
+    if (bearingChanged || distanceChanged) {
+      unawaited(_sendNavigationUpdate());
+    }
+  }
+
+  Future<void> _sendNavigationUpdate() async {
+    try {
+      await _channel?.invokeMethod<void>('updateNavigation', {
+        'targetBearing': widget.targetBearing,
+        'distance': widget.distance,
+      });
+      _lastSentBearing = widget.targetBearing;
+      _lastSentDistance = widget.distance;
+    } on PlatformException {
+      // The native view can disappear while an asynchronous update is pending.
+    }
+  }
+
+  @override
+  void dispose() {
+    _channel?.setMethodCallHandler(null);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return UiKitView(
+      viewType: 'unimet_ar/arkit_view',
+      layoutDirection: TextDirection.ltr,
+      creationParams: <String, dynamic>{
+        'mode': 'navigation',
+        'targetBearing': widget.targetBearing,
+        'distance': widget.distance,
+      },
+      creationParamsCodec: const StandardMessageCodec(),
+      onPlatformViewCreated: _onCreated,
+    );
+  }
+}
+
+class ArFloorSearchState extends StatelessWidget {
+  const ArFloorSearchState({super.key, required this.trackingState});
+
+  final String trackingState;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      decoration: BoxDecoration(
+        color: const Color(0xD9101419),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.grid_on_rounded, color: Color(0xFF8DC1FF)),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Apunta la cámara hacia el piso',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Text(
+                  trackingState,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ArRouteReadyBadge extends StatelessWidget {
+  const ArRouteReadyBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xCC0E3329),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF72D9AA)),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle_rounded, color: Color(0xFF82E6AC), size: 18),
+          SizedBox(width: 7),
+          Text(
+            'Ruta anclada al piso',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
           ),
         ],
       ),
@@ -1473,7 +2096,9 @@ class TopGuideBar extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '${formatDistance(distance)} al destino',
+                  destination.isImported
+                      ? '${formatDistance(distance)} · Piso ${destination.floor}'
+                      : '${formatDistance(distance)} al destino',
                   style: const TextStyle(
                     color: Colors.white70,
                     fontWeight: FontWeight.w700,
@@ -1640,19 +2265,29 @@ class NavigationPanel extends StatelessWidget {
     required this.distance,
     required this.relativeBearing,
     required this.headingDegrees,
+    required this.compassAccuracyDegrees,
+    required this.headingSource,
     required this.targetBearing,
     required this.horizontalAccuracy,
     required this.sensorProblem,
     required this.arrived,
+    required this.bearingReliable,
+    required this.arTrackingState,
+    required this.floorDetected,
   });
 
   final double distance;
   final double relativeBearing;
   final double? headingDegrees;
+  final double? compassAccuracyDegrees;
+  final String headingSource;
   final double targetBearing;
   final double horizontalAccuracy;
   final String? sensorProblem;
   final bool arrived;
+  final bool bearingReliable;
+  final String? arTrackingState;
+  final bool? floorDetected;
 
   @override
   Widget build(BuildContext context) {
@@ -1738,7 +2373,7 @@ class NavigationPanel extends StatelessWidget {
                 child: Text(
                   headingDegrees == null
                       ? 'Brújula: esperando datos'
-                      : 'Brújula: ${headingDegrees!.toStringAsFixed(0)}°  ·  Destino: ${targetBearing.toStringAsFixed(0)}°',
+                      : '$headingSource: ${headingDegrees!.toStringAsFixed(0)}°  ·  Destino: ${targetBearing.toStringAsFixed(0)}°',
                   style: const TextStyle(color: Colors.white60, fontSize: 12),
                 ),
               ),
@@ -1754,6 +2389,46 @@ class NavigationPanel extends StatelessWidget {
               ),
             ],
           ),
+          if (compassAccuracyDegrees != null || arTrackingState != null) ...[
+            const SizedBox(height: 7),
+            Row(
+              children: [
+                if (compassAccuracyDegrees != null)
+                  Expanded(
+                    child: Text(
+                      'Brújula ±${compassAccuracyDegrees!.toStringAsFixed(0)}°',
+                      style: TextStyle(
+                        color: compassAccuracyDegrees! <= 20
+                            ? const Color(0xFF8BE3B1)
+                            : const Color(0xFFFFC66E),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                if (arTrackingState != null)
+                  Text(
+                    floorDetected == true
+                        ? 'AR: piso detectado'
+                        : 'AR: $arTrackingState',
+                    style: TextStyle(
+                      color: floorDetected == true
+                          ? const Color(0xFF8BE3B1)
+                          : const Color(0xFF8DC1FF),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+              ],
+            ),
+          ],
+          if (!bearingReliable && !arrived) ...[
+            const SizedBox(height: 9),
+            const Text(
+              'El destino está demasiado cerca para la precisión GPS actual; la dirección puede variar.',
+              style: TextStyle(color: Color(0xFFFFC66E), fontSize: 12),
+            ),
+          ],
           if (sensorProblem != null) ...[
             const SizedBox(height: 9),
             Text(
@@ -1812,6 +2487,50 @@ double normalizeDegrees(double degrees) {
 
 double shortestSignedAngle(double degrees) {
   return (degrees + 540) % 360 - 180;
+}
+
+double relativeBearingDegrees(double targetBearing, double cameraHeading) {
+  return normalizeDegrees(targetBearing - cameraHeading);
+}
+
+double? preferredCameraHeading({
+  required bool isIOS,
+  required double? heading,
+  required double? headingForCameraMode,
+}) {
+  final value = isIOS ? (headingForCameraMode ?? heading) : heading;
+  if (value == null || !value.isFinite) return null;
+  return normalizeDegrees(value);
+}
+
+double smoothHeadingDegrees({
+  required double? previous,
+  required double next,
+  required double factor,
+}) {
+  final normalizedNext = normalizeDegrees(next);
+  if (previous == null) return normalizedNext;
+  final delta = shortestSignedAngle(normalizedNext - previous);
+  return normalizeDegrees(previous + delta * factor.clamp(0.0, 1.0));
+}
+
+bool navigationBearingIsReliable({
+  required double distance,
+  required double horizontalAccuracy,
+}) {
+  return distance >= math.max(4, horizontalAccuracy * 1.5);
+}
+
+String trackingStateMessage(String state) {
+  return switch (state) {
+    'normal' => 'Seguimiento estable',
+    'inicializando' => 'Inicializando el entorno',
+    'movimiento_excesivo' => 'Mueve el iPhone más lentamente',
+    'pocos_detalles' => 'Apunta hacia una zona con más detalles',
+    'relocalizando' => 'Recuperando la ubicación',
+    'no_disponible' => 'Seguimiento no disponible',
+    _ => 'Seguimiento limitado',
+  };
 }
 
 String instructionFor(double relativeBearing) {

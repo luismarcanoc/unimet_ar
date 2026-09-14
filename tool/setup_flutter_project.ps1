@@ -9,6 +9,10 @@ $backup = Join-Path $env:TEMP ("unimet_ar_backup_" + [guid]::NewGuid().ToString(
 New-Item -ItemType Directory -Path $backup | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $root "lib\main.dart") -Destination (Join-Path $backup "main.dart")
+$salonCsvSource = Join-Path $root "lib\salon_csv.dart"
+if (Test-Path $salonCsvSource) {
+  Copy-Item -LiteralPath $salonCsvSource -Destination (Join-Path $backup "salon_csv.dart")
+}
 Copy-Item -LiteralPath (Join-Path $root "pubspec.yaml") -Destination (Join-Path $backup "pubspec.yaml")
 Copy-Item -LiteralPath (Join-Path $root "analysis_options.yaml") -Destination (Join-Path $backup "analysis_options.yaml")
 Copy-Item -LiteralPath (Join-Path $root "README.md") -Destination (Join-Path $backup "README.md")
@@ -37,6 +41,10 @@ try {
   flutter create --platforms android,ios --project-name unimet_ar .
 
   Copy-Item -LiteralPath (Join-Path $backup "main.dart") -Destination (Join-Path $root "lib\main.dart") -Force
+  $salonCsvBackup = Join-Path $backup "salon_csv.dart"
+  if (Test-Path $salonCsvBackup) {
+    Copy-Item -LiteralPath $salonCsvBackup -Destination (Join-Path $root "lib\salon_csv.dart") -Force
+  }
   Copy-Item -LiteralPath (Join-Path $backup "pubspec.yaml") -Destination (Join-Path $root "pubspec.yaml") -Force
   Copy-Item -LiteralPath (Join-Path $backup "analysis_options.yaml") -Destination (Join-Path $root "analysis_options.yaml") -Force
   Copy-Item -LiteralPath (Join-Path $backup "README.md") -Destination (Join-Path $root "README.md") -Force

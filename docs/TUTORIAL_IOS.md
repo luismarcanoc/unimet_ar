@@ -258,6 +258,17 @@ Selecciona `While Using the App` y activa `Precise Location`. La guia usa GPS pa
 4. Selecciona el punto y toca `Guiarme a...`.
 5. Gira el iPhone y confirma que la flecha y la brujula se muevan solas.
 
+Para usar los salones registrados:
+
+1. Exporta el CSV desde `formulario_salones` y guardalo en Archivos o iCloud Drive.
+2. En UNIMET AR toca el boton de importar junto a `Cargar salones UNIMET`.
+3. Busca por nombre, piso o referencia y selecciona el salon.
+4. Abre la guia, apunta un poco hacia el piso y espera `Ruta anclada al piso`.
+
+El panel inferior muestra el rumbo ARKit, rumbo del destino, precision de la
+brujula, precision GPS y estado de deteccion del piso. Usa
+`docs/PRUEBA_FISICA_UNIMET.md` para hacer la prueba completa.
+
 Los puntos quedan guardados localmente en ese iPhone y se pueden borrar desde la lista.
 
 ### Prueba Nativa QR + ARKit

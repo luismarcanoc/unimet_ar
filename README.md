@@ -1,7 +1,7 @@
 # UNIMET AR
 
-Prototipo Flutter para probar una guia visual tipo AR usando la ubicacion y los
-sensores de un telefono real.
+Prototipo Flutter para probar una guia visual AR usando ubicacion, brujula,
+ARKit y destinos importados desde el registro de salones.
 
 La primera version esta pensada para pruebas fisicas en casa:
 
@@ -12,8 +12,8 @@ La primera version esta pensada para pruebas fisicas en casa:
 - la brujula del telefono orienta la flecha automaticamente,
 - la ubicacion en vivo actualiza la distancia mientras caminas.
 
-Los puntos quedan guardados localmente en el telefono. Esta fase permite probar
-el flujo en casa antes de conectar la aplicacion con los salones reales.
+Los puntos y el ultimo CSV importado quedan guardados en el telefono. El CSV se
+puede reemplazar cuando se exporte una version nueva desde el formulario.
 
 ## Guia Completa
 
@@ -28,6 +28,10 @@ Para iPhone/macOS:
 Instalacion completa desde cero en Mac:
 
 [docs/INSTALACION_MAC_COMPLETA.md](docs/INSTALACION_MAC_COMPLETA.md)
+
+Prueba de orientacion, flechas y salones en UNIMET:
+
+[docs/PRUEBA_FISICA_UNIMET.md](docs/PRUEBA_FISICA_UNIMET.md)
 
 ## Comandos Rapidos
 
@@ -49,6 +53,7 @@ powershell -ExecutionPolicy Bypass -File .\tool\setup_flutter_project.ps1
 
 ```text
 lib/main.dart                      Codigo principal del prototipo
+lib/salon_csv.dart                 Lectura y validacion del CSV de salones
 pubspec.yaml                       Dependencias Flutter
 android/                           Proyecto Android generado
 ios/                               Proyecto iOS generado
@@ -56,6 +61,7 @@ tool/setup_flutter_project.ps1     Script para regenerar el proyecto nativo
 docs/TUTORIAL_ANDROID.md           Tutorial de instalacion, ejecucion y uso
 docs/TUTORIAL_IOS.md               Tutorial para compilar/probar en iPhone
 docs/INSTALACION_MAC_COMPLETA.md   Instalacion completa en Mac desde cero
+docs/PRUEBA_FISICA_UNIMET.md       Checklist para la prueba en campo
 ```
 
 ## Estado Actual
@@ -71,7 +77,9 @@ El proyecto ya tiene:
 - Prevencion de puntos duplicados a menos de 2 metros.
 - Tutorial emergente durante el primer uso.
 - Brujula automatica y seguimiento de ubicacion en vivo.
-- Guia visual con flecha tridimensional sobre la camara.
+- Rumbo especifico para la camara y diagnostico de precision.
+- Guia iOS con flechas 3D ancladas a un piso detectado por ARKit.
+- Importacion, busqueda y seleccion de salones desde CSV.
 - Prueba nativa iOS con QR, ARKit World Tracking y flechas 3D ancladas.
 
 ## Prueba QR + ARKit En iPhone
