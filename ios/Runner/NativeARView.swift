@@ -83,6 +83,10 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
       case "reset":
         self?.startSession(reset: true)
         result(nil)
+      case "stop":
+        self?.sceneView.session.pause()
+        self?.routeRoot.isHidden = true
+        result(nil)
       case "updateNavigation":
         self?.updateNavigation(call.arguments)
         result(nil)
@@ -132,6 +136,9 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
       return
     }
     detectedAnchorId = nil
+    lastTrackingMessage = ""
+    lastHeadingEmission = 0
+    routeRoot.isHidden = false
     routeRoot.childNodes.forEach { $0.removeFromParentNode() }
     arrowNodes = []
     destinationNode = nil
@@ -501,6 +508,13 @@ extension UnimetARPlatformView: ARSessionDelegate {
   }
 
   func session(_ session: ARSession, didFailWithError error: Error) {
-    emit("error", ["message": error.localizedDescription])
+    let nativeError = error as NSError
+    session.pause()
+    routeRoot.isHidden = true
+    emit("error", [
+      "message": error.localizedDescription,
+      "domain": nativeError.domain,
+      "code": nativeError.code,
+    ])
   }
 }

@@ -1374,6 +1374,7 @@ class _ArKitQrTestScreenState extends State<ArKitQrTestScreen> {
 
   @override
   void dispose() {
+    unawaited(stopArSession(_channel));
     _channel?.setMethodCallHandler(null);
     super.dispose();
   }
@@ -1641,6 +1642,8 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
   String _headingSource = 'Brújula';
   String _arTrackingState = 'Inicializando ARKit';
   String? _sensorProblem;
+  String? _arError;
+  final _navigationArKey = GlobalKey<_DirectionalArBackdropState>();
 
   @override
   void initState() {
@@ -1727,6 +1730,7 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
     if (!mounted) return;
     switch (method) {
       case 'cameraHeading':
+        if (_arError != null) return;
         final heading = (arguments['heading'] as num?)?.toDouble();
         if (heading == null) return;
         setState(() {
@@ -1744,12 +1748,19 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
         final state = arguments['state'] as String? ?? 'limitado';
         setState(() => _arTrackingState = trackingStateMessage(state));
       case 'arReady':
-        setState(() => _arTrackingState = 'Buscando el piso');
+        setState(() {
+          _arError = null;
+          _floorDetected = false;
+          _nativeArHeadingActive = false;
+          _arTrackingState = 'Buscando el piso';
+        });
       case 'error':
         setState(() {
           _arTrackingState = 'ARKit no disponible';
-          _sensorProblem =
-              arguments['message'] as String? ?? 'No se pudo iniciar ARKit.';
+          _floorDetected = false;
+          _nativeArHeadingActive = false;
+          _headingDegrees = null;
+          _arError = formatArSessionError(arguments);
         });
     }
   }
@@ -1792,6 +1803,7 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
         children: [
           if (Platform.isIOS)
             DirectionalArBackdrop(
+              key: _navigationArKey,
               targetBearing: targetBearing,
               distance: distance,
               onEvent: _handleNavigationArEvent,
@@ -1812,7 +1824,12 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
                     distance: distance,
                   ),
                   const Spacer(),
-                  if (_headingDegrees == null)
+                  if (_arError != null)
+                    ArSessionErrorPanel(
+                      message: _arError!,
+                      onRetry: () => _navigationArKey.currentState?.restart(),
+                    )
+                  else if (_headingDegrees == null)
                     const SensorLoadingState()
                   else if (arrived)
                     const ArrivalMarker()
@@ -1875,6 +1892,15 @@ class _DirectionalArBackdropState extends State<DirectionalArBackdrop> {
   double? _lastSentBearing;
   double? _lastSentDistance;
 
+  Future<void> restart() async {
+    try {
+      await _channel?.invokeMethod<void>('reset');
+      await _sendNavigationUpdate();
+    } on PlatformException catch (error) {
+      await widget.onEvent('error', {'message': error.message ?? error.code});
+    }
+  }
+
   void _onCreated(int viewId) {
     final channel = MethodChannel('unimet_ar/arkit_view_$viewId');
     channel.setMethodCallHandler((call) async {
@@ -1915,6 +1941,7 @@ class _DirectionalArBackdropState extends State<DirectionalArBackdrop> {
 
   @override
   void dispose() {
+    unawaited(stopArSession(_channel));
     _channel?.setMethodCallHandler(null);
     super.dispose();
   }
@@ -1931,6 +1958,66 @@ class _DirectionalArBackdropState extends State<DirectionalArBackdrop> {
       },
       creationParamsCodec: const StandardMessageCodec(),
       onPlatformViewCreated: _onCreated,
+    );
+  }
+}
+
+Future<void> stopArSession(MethodChannel? channel) async {
+  try {
+    await channel?.invokeMethod<void>('stop');
+  } on PlatformException {
+    // Disposal may already have removed the native view.
+  } on MissingPluginException {
+    // No native handler remains after the platform view is disposed.
+  }
+}
+
+String formatArSessionError(Map<String, dynamic> arguments) {
+  final message =
+      arguments['message'] as String? ?? 'No se pudo iniciar ARKit.';
+  final domain = arguments['domain'];
+  final code = arguments['code'];
+  return code == null ? message : '$message\n${domain ?? 'ARKit'}: $code';
+}
+
+class ArSessionErrorPanel extends StatelessWidget {
+  const ArSessionErrorPanel({
+    super.key,
+    required this.message,
+    required this.onRetry,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 240),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xEE101419),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('La sesión AR se detuvo',
+                style: TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            SelectableText(message,
+                style: const TextStyle(color: Color(0xFFFFC66E))),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reintentar AR'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

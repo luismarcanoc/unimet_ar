@@ -3,6 +3,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:unimet_ar/main.dart';
 
 void main() {
+  test('preserves native AR error details for diagnosis', () {
+    expect(
+        formatArSessionError({
+          'message': 'Sensor failed',
+          'domain': 'ARErrorDomain',
+          'code': 102,
+        }),
+        'Sensor failed\nARErrorDomain: 102');
+  });
   group('navigation calculations', () {
     test('normalizes angles around north', () {
       expect(normalizeDegrees(-10), 350);
