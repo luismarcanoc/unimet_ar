@@ -39,6 +39,7 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
   private let sceneView: ARSCNView
   private let channel: FlutterMethodChannel
   private let routeRoot = SCNNode()
+  private let coaching = ARCoachingOverlayView()
   private let mode: ViewMode
   private let markerId: String
   private let markerPhysicalWidth: CGFloat
@@ -116,7 +117,6 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
     sceneView.antialiasingMode = .multisampling4X
     sceneView.scene.rootNode.addChildNode(routeRoot)
 
-    let coaching = ARCoachingOverlayView()
     coaching.session = sceneView.session
     coaching.goal = mode == .navigation ? .horizontalPlane : .tracking
     coaching.activatesAutomatically = true
@@ -134,6 +134,14 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
     guard ARWorldTrackingConfiguration.isSupported else {
       emit("error", ["message": "Este iPhone no es compatible con ARKit World Tracking."])
       return
+    }
+    if reset {
+      sceneView.session.pause()
+      sceneView.session.delegate = nil
+      // A failed capture pipeline may survive run(resetTracking:).
+      sceneView.session = ARSession()
+      sceneView.session.delegate = self
+      coaching.session = sceneView.session
     }
     detectedAnchorId = nil
     lastTrackingMessage = ""
@@ -451,6 +459,7 @@ extension UnimetARPlatformView: ARSCNViewDelegate {
 
 extension UnimetARPlatformView: ARSessionDelegate {
   func session(_ session: ARSession, didUpdate frame: ARFrame) {
+    guard session === sceneView.session else { return }
     guard mode == .navigation else { return }
 
     let cameraTransform = frame.camera.transform
@@ -482,6 +491,7 @@ extension UnimetARPlatformView: ARSessionDelegate {
   }
 
   func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
+    guard session === sceneView.session else { return }
     let message: String
     switch camera.trackingState {
     case .normal:
@@ -508,11 +518,22 @@ extension UnimetARPlatformView: ARSessionDelegate {
   }
 
   func session(_ session: ARSession, didFailWithError error: Error) {
+    guard session === sceneView.session else { return }
     let nativeError = error as NSError
     session.pause()
     routeRoot.isHidden = true
+    var details = [error.localizedDescription]
+    if let reason = nativeError.localizedFailureReason {
+      details.append(reason)
+    }
+    if let underlying = nativeError.userInfo[NSUnderlyingErrorKey] as? NSError {
+      details.append("\(underlying.domain): \(underlying.code) - \(underlying.localizedDescription)")
+      if let suggestion = underlying.localizedRecoverySuggestion {
+        details.append(suggestion)
+      }
+    }
     emit("error", [
-      "message": error.localizedDescription,
+      "message": details.joined(separator: "\n"),
       "domain": nativeError.domain,
       "code": nativeError.code,
     ])
