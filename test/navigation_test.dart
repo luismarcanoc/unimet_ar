@@ -69,15 +69,18 @@ void main() {
       );
     });
 
-    test('flags bearings hidden by GPS uncertainty', () {
+    test('turn instructions resist boundary jitter but follow deliberate turns',
+        () {
+      expect(instructionFor(14, previous: 'Sigue derecho'), 'Sigue derecho');
       expect(
-        navigationBearingIsReliable(distance: 20, horizontalAccuracy: 5),
-        isTrue,
-      );
-      expect(
-        navigationBearingIsReliable(distance: 5, horizontalAccuracy: 5),
-        isFalse,
-      );
+          instructionFor(18, previous: 'Sigue derecho'), 'Ve hacia la derecha');
+      expect(instructionFor(48, previous: 'Gira a la derecha'),
+          'Gira a la derecha');
+      expect(instructionFor(43, previous: 'Gira a la derecha'),
+          'Ve hacia la derecha');
+      expect(instructionFor(359, previous: 'Sigue derecho'), 'Sigue derecho');
+      expect(instructionFor(270, previous: 'Gira a la derecha'),
+          'Gira a la izquierda');
     });
   });
 

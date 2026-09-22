@@ -81,6 +81,15 @@ El proyecto ya tiene:
 - Guia iOS con flechas 3D ancladas a un piso detectado por ARKit.
 - Importacion, busqueda y seleccion de salones desde CSV.
 - Prueba nativa iOS con QR, ARKit World Tracking y flechas 3D ancladas.
+- Filtrado de lecturas GPS antiguas, imprecisas y saltos incompatibles con caminar.
+- Pausa de flechas cuando la precision del telefono y del destino no permite guiar.
+- Indicador relativo al destino y rumbo de camara con suavizado temporal.
+- Diagnostico copiable desde la guia para compartir resultados de campo.
+
+La guia GPS indica una direccion en linea recta, no una ruta por pasillos.
+No confirma una llegada exacta ni identifica el piso mediante GPS.
+Para probar esta version, seguir [PRUEBA_FISICA_UNIMET.md](docs/PRUEBA_FISICA_UNIMET.md)
+y completar [PLANTILLA_RESULTADOS_GPS.md](docs/PLANTILLA_RESULTADOS_GPS.md).
 
 ## Prueba QR + ARKit En iPhone
 

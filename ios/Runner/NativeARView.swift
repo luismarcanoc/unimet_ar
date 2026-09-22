@@ -51,6 +51,10 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
   private var destinationNode: SCNNode?
   private var navigationTargetBearing: Float
   private var navigationDistance: Float
+  private var navigationEnabled: Bool
+  private var trackingNormal = false
+  private var cameraHeadingUsable = false
+  private var lastNavigationUpdate: TimeInterval = 0
   private var detectedFloorY: Float?
   private var bestFloorScore = Float.greatestFiniteMagnitude
   private var floorEventSent = false
@@ -71,6 +75,7 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
     routeLength = Float(parameters?["routeLength"] as? Double ?? 3.0)
     navigationTargetBearing = Float(parameters?["targetBearing"] as? Double ?? 0)
     navigationDistance = Float(parameters?["distance"] as? Double ?? 3.0)
+    navigationEnabled = parameters?["guidanceEnabled"] as? Bool ?? false
     sceneView = ARSCNView(frame: frame)
     channel = FlutterMethodChannel(
       name: "unimet_ar/arkit_view_\(viewId)",
@@ -85,6 +90,7 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
         self?.startSession(reset: true)
         result(nil)
       case "stop":
+        self?.navigationEnabled = false
         self?.sceneView.session.pause()
         self?.routeRoot.isHidden = true
         result(nil)
@@ -113,6 +119,7 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
     sceneView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     sceneView.delegate = self
     sceneView.session.delegate = self
+    sceneView.session.delegateQueue = DispatchQueue.main
     sceneView.automaticallyUpdatesLighting = true
     sceneView.antialiasingMode = .multisampling4X
     sceneView.scene.rootNode.addChildNode(routeRoot)
@@ -141,12 +148,16 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
       // A failed capture pipeline may survive run(resetTracking:).
       sceneView.session = ARSession()
       sceneView.session.delegate = self
+      sceneView.session.delegateQueue = DispatchQueue.main
       coaching.session = sceneView.session
     }
     detectedAnchorId = nil
     lastTrackingMessage = ""
     lastHeadingEmission = 0
-    routeRoot.isHidden = false
+    routeRoot.isHidden = mode == .navigation
+    trackingNormal = false
+    cameraHeadingUsable = false
+    lastNavigationUpdate = Date.timeIntervalSinceReferenceDate
     routeRoot.childNodes.forEach { $0.removeFromParentNode() }
     arrowNodes = []
     destinationNode = nil
@@ -198,11 +209,19 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
     let values = arguments as? [String: Any]
     let nextBearing = Float(values?["targetBearing"] as? Double ?? Double(navigationTargetBearing))
     let nextDistance = Float(values?["distance"] as? Double ?? Double(navigationDistance))
+    guard nextBearing.isFinite, nextDistance.isFinite else { return }
+    let wasEnabled = navigationEnabled
+    navigationEnabled = values?["guidanceEnabled"] as? Bool ?? false
+    lastNavigationUpdate = Date.timeIntervalSinceReferenceDate
+    if !navigationEnabled {
+      routeRoot.isHidden = true
+    }
     let bearingChange = abs(shortestAngle(nextBearing - navigationTargetBearing))
     let distanceChange = abs(nextDistance - navigationDistance)
     navigationTargetBearing = normalizedDegrees(nextBearing)
     navigationDistance = max(0, nextDistance)
-    if bearingChange >= 2 || distanceChange >= 0.5 || arrowNodes.isEmpty {
+    if bearingChange >= 2 || distanceChange >= 0.5 || arrowNodes.isEmpty ||
+        wasEnabled != navigationEnabled {
       buildNavigationRoute()
     }
   }
@@ -308,10 +327,16 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
 
   private func buildNavigationRoute() {
     guard mode == .navigation else { return }
+    guard navigationEnabled, trackingNormal, cameraHeadingUsable,
+          Date.timeIntervalSinceReferenceDate - lastNavigationUpdate < 2.5 else {
+      routeRoot.isHidden = true
+      return
+    }
     guard
       let floorY = detectedFloorY,
       let cameraTransform = sceneView.session.currentFrame?.camera.transform
     else { return }
+    routeRoot.isHidden = false
 
     let bearing = normalizedDegrees(navigationTargetBearing)
     let radians = bearing * .pi / 180
@@ -334,6 +359,8 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
       }
     }
 
+    SCNTransaction.begin()
+    SCNTransaction.animationDuration = lastRouteOrigin == nil ? 0 : 0.20
     for index in 0..<arrowCount {
       let progress = Float(index + 1) / Float(arrowCount)
       let distance = 0.55 + (visibleLength - 0.55) * progress
@@ -352,18 +379,9 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
       )
     }
 
-    if navigationDistance <= 4.6 {
-      let destination = cameraPosition + direction * max(navigationDistance, 1.0)
-      if destinationNode == nil {
-        let node = makeDestinationNode()
-        routeRoot.addChildNode(node)
-        destinationNode = node
-      }
-      destinationNode?.isHidden = false
-      destinationNode?.position = SCNVector3(destination.x, floorY + 0.04, destination.z)
-    } else {
-      destinationNode?.isHidden = true
-    }
+    SCNTransaction.commit()
+    // GPS does not identify an exact door: only the QR trial has a finish ring.
+    destinationNode?.isHidden = true
     lastRouteOrigin = cameraPosition
   }
 
@@ -427,6 +445,12 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
 
 extension UnimetARPlatformView: ARSCNViewDelegate {
   func renderer(_ renderer: SCNSceneRenderer, didAdd node: SCNNode, for anchor: ARAnchor) {
+    DispatchQueue.main.async { [weak self] in
+      self?.handleAddedAnchor(node, anchor: anchor)
+    }
+  }
+
+  private func handleAddedAnchor(_ node: SCNNode, anchor: ARAnchor) {
     if mode == .navigation, let planeAnchor = anchor as? ARPlaneAnchor {
       considerFloor(planeAnchor)
       return
@@ -444,6 +468,12 @@ extension UnimetARPlatformView: ARSCNViewDelegate {
   }
 
   func renderer(_ renderer: SCNSceneRenderer, didUpdate node: SCNNode, for anchor: ARAnchor) {
+    DispatchQueue.main.async { [weak self] in
+      self?.handleUpdatedAnchor(node, anchor: anchor)
+    }
+  }
+
+  private func handleUpdatedAnchor(_ node: SCNNode, anchor: ARAnchor) {
     if mode == .navigation, let planeAnchor = anchor as? ARPlaneAnchor {
       considerFloor(planeAnchor)
       return
@@ -468,14 +498,31 @@ extension UnimetARPlatformView: ARSessionDelegate {
       0,
       -cameraTransform.columns.2.z
     )
-    if simd_length(forward) > 0.001,
-       frame.timestamp - lastHeadingEmission >= 0.10 {
-      let direction = simd_normalize(forward)
-      let radians = atan2(direction.x, -direction.z)
-      let heading = normalizedDegrees(radians * 180 / .pi)
-      lastHeadingEmission = frame.timestamp
-      emit("cameraHeading", ["heading": Double(heading)])
+    if case .normal = frame.camera.trackingState {
+      trackingNormal = true
+    } else {
+      trackingNormal = false
     }
+    // A camera looking almost vertically has no useful horizontal bearing.
+    cameraHeadingUsable = trackingNormal && simd_length(forward) >= 0.25
+    if frame.timestamp - lastHeadingEmission >= 0.10 {
+      lastHeadingEmission = frame.timestamp
+      if cameraHeadingUsable {
+        let direction = simd_normalize(forward)
+        let radians = atan2(direction.x, -direction.z)
+        let heading = normalizedDegrees(radians * 180 / .pi)
+        emit("cameraHeading", ["heading": Double(heading)])
+      } else {
+        emit("cameraHeadingUnavailable", [:])
+      }
+    }
+
+    guard navigationEnabled, cameraHeadingUsable,
+          Date.timeIntervalSinceReferenceDate - lastNavigationUpdate < 2.5 else {
+      routeRoot.isHidden = true
+      return
+    }
+    if routeRoot.isHidden || lastRouteOrigin == nil { buildNavigationRoute() }
 
     if let origin = lastRouteOrigin, detectedFloorY != nil {
       let current = SIMD3<Float>(
@@ -514,7 +561,23 @@ extension UnimetARPlatformView: ARSessionDelegate {
     }
     guard message != lastTrackingMessage else { return }
     lastTrackingMessage = message
+    trackingNormal = message == "normal"
+    if mode == .navigation && !trackingNormal { routeRoot.isHidden = true }
+    if mode == .qr { routeRoot.isHidden = !trackingNormal }
     emit("trackingState", ["state": message])
+  }
+
+  func sessionWasInterrupted(_ session: ARSession) {
+    guard session === sceneView.session else { return }
+    trackingNormal = false
+    routeRoot.isHidden = true
+    emit("trackingState", ["state": "no_disponible"])
+  }
+
+  func sessionInterruptionEnded(_ session: ARSession) {
+    guard session === sceneView.session else { return }
+    lastTrackingMessage = ""
+    emit("trackingState", ["state": "relocalizando"])
   }
 
   func session(_ session: ARSession, didFailWithError error: Error) {

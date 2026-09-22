@@ -12,6 +12,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'salon_csv.dart';
+import 'gps_navigation.dart';
 
 const _blue = Color(0xFF1769E8);
 const _navy = Color(0xFF081B49);
@@ -22,7 +23,6 @@ const _importedSalonsKey = 'imported_salons_v1';
 const _selectedPointKey = 'selected_interest_point_v1';
 const _onboardingKey = 'onboarding_seen_v1';
 const _duplicateRadiusMeters = 2.0;
-const _arrivalRadiusMeters = 2.0;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -1635,9 +1635,21 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
   StreamSubscription<Position>? _positionSubscription;
   StreamSubscription<CompassEvent>? _compassSubscription;
   late Position _currentPosition;
+  final _gps = WalkingPositionFilter();
+  final _headingFilter = HeadingSmoother();
+  final List<Map<String, dynamic>> _diagnostics = [];
+  Position? _latestRawPosition;
+  Timer? _freshnessTimer;
+  DateTime? _lastHeadingAt;
+  double? _targetBearing;
+  String? _turnInstruction;
+  bool _trackingNormal = false;
+  bool _cameraHeadingValid = false;
+  bool _foreground = true;
+  AppLifecycleListener? _lifecycle;
+  String? _locationProblem;
   double? _headingDegrees;
   double? _compassAccuracyDegrees;
-  bool _nativeArHeadingActive = false;
   bool _floorDetected = false;
   String _headingSource = 'Brújula';
   String _arTrackingState = 'Inicializando ARKit';
@@ -1649,8 +1661,128 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
   void initState() {
     super.initState();
     _currentPosition = widget.initialPosition;
+    _acceptPosition(widget.initialPosition);
     if (!Platform.isIOS) _initializeCamera();
     _startLiveTracking();
+    _freshnessTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {});
+      _recordDiagnostic();
+    });
+    _lifecycle = AppLifecycleListener(
+      onStateChange: (state) {
+        if (!mounted) return;
+        setState(() {
+          _foreground = state == AppLifecycleState.resumed;
+          _lastHeadingAt = null;
+          _cameraHeadingValid = false;
+          _headingFilter.reset();
+        });
+      },
+    );
+  }
+
+  void _acceptPosition(Position position) {
+    _latestRawPosition = position;
+    if (!_gps.add(position, DateTime.now())) return;
+    _currentPosition = _gps.position!;
+    final next = coordinateBearingDegrees(
+      _currentPosition.latitude,
+      _currentPosition.longitude,
+      widget.destination.latitude,
+      widget.destination.longitude,
+    );
+    _targetBearing = smoothHeadingDegrees(
+      previous: _targetBearing,
+      next: next,
+      factor: 0.65,
+    );
+    _refreshInstruction();
+    _locationProblem = null;
+  }
+
+  void _refreshInstruction() {
+    if (_targetBearing == null || _headingDegrees == null) return;
+    _turnInstruction = instructionFor(
+      relativeBearingDegrees(_targetBearing!, _headingDegrees!),
+      previous: _turnInstruction,
+    );
+  }
+
+  double get _distance => coordinateDistanceMeters(
+        _currentPosition.latitude,
+        _currentPosition.longitude,
+        widget.destination.latitude,
+        widget.destination.longitude,
+      );
+
+  GpsGuidance get _gpsState => _gps.guidance(
+        now: DateTime.now(),
+        distance: _distance,
+        destinationAccuracy: widget.destination.accuracy,
+      );
+
+  bool get _orientationReady =>
+      _foreground &&
+      _lastHeadingAt != null &&
+      DateTime.now().difference(_lastHeadingAt!) < const Duration(seconds: 2) &&
+      _headingDegrees != null &&
+      (Platform.isIOS
+          ? _trackingNormal &&
+              _cameraHeadingValid &&
+              _arError == null &&
+              (_compassAccuracyDegrees == null ||
+                  (_compassAccuracyDegrees! >= 0 &&
+                      _compassAccuracyDegrees! <= 25))
+          : _compassAccuracyDegrees != null &&
+              _compassAccuracyDegrees! >= 0 &&
+              _compassAccuracyDegrees! <= 25);
+
+  bool get _canGuide =>
+      _gpsState == GpsGuidance.ready &&
+      _orientationReady &&
+      _locationProblem == null;
+
+  void _recordDiagnostic() {
+    Map<String, dynamic>? diagnosticPosition(Position? position) =>
+        position?.toJson().map((key, value) =>
+            MapEntry(key, value is num && !value.isFinite ? null : value));
+    _diagnostics.add({
+      'time': DateTime.now().toUtc().toIso8601String(),
+      'raw': diagnosticPosition(_latestRawPosition),
+      'filtered': diagnosticPosition(_gps.position),
+      'accepted': _gps.acceptedCount,
+      'rejected': _gps.rejectedCount,
+      'rejection': _gps.rejection,
+      'gpsState': _gpsState.name,
+      'distanceMeters': _distance,
+      'targetBearing': _targetBearing,
+      'cameraHeading': _headingDegrees,
+      'headingSource': _headingSource,
+      'compassAccuracy': _compassAccuracyDegrees,
+      'tracking': _arTrackingState,
+      'floorDetected': _floorDetected,
+      'guidanceEnabled': _canGuide,
+      'arError': _arError,
+      'locationError': _locationProblem,
+    });
+    if (_diagnostics.length > 180) _diagnostics.removeAt(0);
+  }
+
+  Future<void> _copyDiagnostics() async {
+    _recordDiagnostic();
+    final report = const JsonEncoder.withIndent('  ').convert({
+      'format': 'unimet-gps-test-v1',
+      'platform': Platform.operatingSystem,
+      'system': Platform.operatingSystemVersion,
+      'destination': widget.destination.toJson(),
+      'samples': _diagnostics,
+    });
+    await Clipboard.setData(ClipboardData(text: report));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Diagnóstico copiado para compartir.')),
+    );
   }
 
   void _initializeCamera() {
@@ -1669,20 +1801,27 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
   }
 
   void _startLiveTracking() {
-    const settings = LocationSettings(
-      accuracy: LocationAccuracy.bestForNavigation,
-      distanceFilter: 1,
-    );
+    final settings = Platform.isIOS
+        ? AppleSettings(
+            accuracy: LocationAccuracy.bestForNavigation,
+            distanceFilter: 0,
+            activityType: ActivityType.fitness,
+            pauseLocationUpdatesAutomatically: false,
+            allowBackgroundLocationUpdates: false)
+        : AndroidSettings(
+            accuracy: LocationAccuracy.bestForNavigation,
+            distanceFilter: 0,
+            intervalDuration: const Duration(seconds: 1));
     _positionSubscription = Geolocator.getPositionStream(
       locationSettings: settings,
     ).listen(
       (position) {
-        if (mounted) setState(() => _currentPosition = position);
+        if (mounted) setState(() => _acceptPosition(position));
       },
       onError: (_) {
         if (mounted) {
           setState(
-              () => _sensorProblem = 'No se pudo actualizar la ubicación.');
+              () => _locationProblem = 'No se pudo actualizar la ubicación.');
         }
       },
     );
@@ -1702,13 +1841,14 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
         if (!mounted) return;
         setState(() {
           _compassAccuracyDegrees = event.accuracy;
-          if (!_nativeArHeadingActive && newHeading != null) {
-            _headingDegrees = smoothHeadingDegrees(
-              previous: _headingDegrees,
-              next: newHeading,
-              factor: 0.22,
-            );
-            _headingSource = Platform.isIOS ? 'Cámara + brújula' : 'Brújula';
+          // iOS camera mode from flutter_compass uses magnetic north, while
+          // this view uses ARKit's world heading. Do not mix those references.
+          if (!Platform.isIOS && newHeading != null) {
+            final now = DateTime.now();
+            _headingDegrees = _headingFilter.update(newHeading, now);
+            _refreshInstruction();
+            _lastHeadingAt = now;
+            _headingSource = 'Brújula';
           }
           _sensorProblem = event.accuracy != null && event.accuracy! > 25
               ? 'La brújula necesita calibración. Aléjate de metal y mueve el teléfono en forma de 8.'
@@ -1732,33 +1872,52 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
       case 'cameraHeading':
         if (_arError != null) return;
         final heading = (arguments['heading'] as num?)?.toDouble();
-        if (heading == null) return;
+        if (heading == null || !heading.isFinite || heading < 0) return;
         setState(() {
-          _nativeArHeadingActive = true;
-          _headingDegrees = smoothHeadingDegrees(
-            previous: _headingDegrees,
-            next: heading,
-            factor: 0.28,
-          );
+          final now = DateTime.now();
+          _headingDegrees = _headingFilter.update(heading, now);
+          _refreshInstruction();
+          _lastHeadingAt = now;
+          _cameraHeadingValid = true;
+          _trackingNormal = true;
+          _arTrackingState = trackingStateMessage('normal');
           _headingSource = 'ARKit';
+        });
+      case 'cameraHeadingUnavailable':
+        setState(() {
+          _cameraHeadingValid = false;
+          _lastHeadingAt = null;
+          _headingFilter.reset();
         });
       case 'floorDetected':
         setState(() => _floorDetected = true);
       case 'trackingState':
         final state = arguments['state'] as String? ?? 'limitado';
-        setState(() => _arTrackingState = trackingStateMessage(state));
+        setState(() {
+          _arTrackingState = trackingStateMessage(state);
+          _trackingNormal = state == 'normal';
+          if (!_trackingNormal) {
+            _lastHeadingAt = null;
+            _headingFilter.reset();
+          }
+        });
       case 'arReady':
         setState(() {
           _arError = null;
           _floorDetected = false;
-          _nativeArHeadingActive = false;
+          _trackingNormal = false;
+          _lastHeadingAt = null;
+          _cameraHeadingValid = false;
+          _headingFilter.reset();
           _arTrackingState = 'Buscando el piso';
         });
       case 'error':
         setState(() {
           _arTrackingState = 'ARKit no disponible';
           _floorDetected = false;
-          _nativeArHeadingActive = false;
+          _trackingNormal = false;
+          _lastHeadingAt = null;
+          _headingFilter.reset();
           _headingDegrees = null;
           _arError = formatArSessionError(arguments);
         });
@@ -1767,6 +1926,8 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
 
   @override
   void dispose() {
+    _freshnessTimer?.cancel();
+    _lifecycle?.dispose();
     unawaited(_positionSubscription?.cancel());
     unawaited(_compassSubscription?.cancel());
     unawaited(_cameraController?.dispose());
@@ -1775,26 +1936,20 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final distance = coordinateDistanceMeters(
-      _currentPosition.latitude,
-      _currentPosition.longitude,
-      widget.destination.latitude,
-      widget.destination.longitude,
-    );
-    final targetBearing = coordinateBearingDegrees(
-      _currentPosition.latitude,
-      _currentPosition.longitude,
-      widget.destination.latitude,
-      widget.destination.longitude,
-    );
+    final distance = _distance;
+    final targetBearing = _targetBearing ?? 0;
     final relativeBearing = _headingDegrees == null
         ? 0.0
         : relativeBearingDegrees(targetBearing, _headingDegrees!);
-    final arrived = distance <= _arrivalRadiusMeters;
-    final bearingReliable = navigationBearingIsReliable(
-      distance: distance,
-      horizontalAccuracy: _currentPosition.accuracy,
-    );
+    final canGuide = _canGuide;
+    final status = _locationProblem ??
+        (_gpsState != GpsGuidance.ready
+            ? gpsGuidanceMessage(_gpsState)
+            : !_orientationReady
+                ? (Platform.isIOS && _trackingNormal && !_cameraHeadingValid
+                    ? 'Levanta la cámara hacia el pasillo'
+                    : 'Esperando orientación fiable')
+                : _turnInstruction ?? instructionFor(relativeBearing));
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -1806,6 +1961,7 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
               key: _navigationArKey,
               targetBearing: targetBearing,
               distance: distance,
+              guidanceEnabled: canGuide,
               onEvent: _handleNavigationArEvent,
             )
           else
@@ -1822,6 +1978,7 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
                   TopGuideBar(
                     destination: widget.destination,
                     distance: distance,
+                    onCopyDiagnostics: _copyDiagnostics,
                   ),
                   const Spacer(),
                   if (_arError != null)
@@ -1829,10 +1986,8 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
                       message: _arError!,
                       onRetry: () => _navigationArKey.currentState?.restart(),
                     )
-                  else if (_headingDegrees == null)
-                    const SensorLoadingState()
-                  else if (arrived)
-                    const ArrivalMarker()
+                  else if (!canGuide)
+                    NavigationStatusBanner(message: status)
                   else if (!Platform.isIOS)
                     PerspectiveNavigationArrow(
                       relativeBearing: relativeBearing,
@@ -1842,19 +1997,28 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
                   else
                     const ArRouteReadyBadge(),
                   const Spacer(),
-                  NavigationPanel(
-                    distance: distance,
-                    relativeBearing: relativeBearing,
-                    headingDegrees: _headingDegrees,
-                    compassAccuracyDegrees: _compassAccuracyDegrees,
-                    headingSource: _headingSource,
-                    targetBearing: targetBearing,
-                    horizontalAccuracy: _currentPosition.accuracy,
-                    sensorProblem: _sensorProblem,
-                    arrived: arrived,
-                    bearingReliable: bearingReliable,
-                    arTrackingState: Platform.isIOS ? _arTrackingState : null,
-                    floorDetected: Platform.isIOS ? _floorDetected : null,
+                  Flexible(
+                    flex: 4,
+                    child: NavigationPanel(
+                      distance: distance,
+                      relativeBearing: relativeBearing,
+                      headingDegrees: _headingDegrees,
+                      compassAccuracyDegrees: _compassAccuracyDegrees,
+                      headingSource: _headingSource,
+                      targetBearing: targetBearing,
+                      horizontalAccuracy: _currentPosition.accuracy,
+                      sensorProblem: _locationProblem ?? _sensorProblem,
+                      instruction: status,
+                      guidanceEnabled: canGuide,
+                      destinationAccuracy: widget.destination.accuracy,
+                      gpsAgeSeconds: DateTime.now()
+                          .difference(_currentPosition.timestamp)
+                          .inSeconds,
+                      arTrackingState: Platform.isIOS ? _arTrackingState : null,
+                      floorDetected: Platform.isIOS
+                          ? _floorDetected && _trackingNormal
+                          : null,
+                    ),
                   ),
                 ],
               ),
@@ -1876,11 +2040,13 @@ class DirectionalArBackdrop extends StatefulWidget {
     super.key,
     required this.targetBearing,
     required this.distance,
+    required this.guidanceEnabled,
     required this.onEvent,
   });
 
   final double targetBearing;
   final double distance;
+  final bool guidanceEnabled;
   final NavigationArEvent onEvent;
 
   @override
@@ -1891,6 +2057,7 @@ class _DirectionalArBackdropState extends State<DirectionalArBackdrop> {
   MethodChannel? _channel;
   double? _lastSentBearing;
   double? _lastSentDistance;
+  DateTime? _lastSentAt;
 
   Future<void> restart() async {
     try {
@@ -1921,19 +2088,27 @@ class _DirectionalArBackdropState extends State<DirectionalArBackdrop> {
             2;
     final distanceChanged = _lastSentDistance == null ||
         (widget.distance - _lastSentDistance!).abs() >= 0.5;
-    if (bearingChanged || distanceChanged) {
+    final heartbeat = _lastSentAt == null ||
+        DateTime.now().difference(_lastSentAt!) >= const Duration(seconds: 1);
+    if (heartbeat ||
+        bearingChanged ||
+        distanceChanged ||
+        widget.guidanceEnabled != oldWidget.guidanceEnabled) {
       unawaited(_sendNavigationUpdate());
     }
   }
 
   Future<void> _sendNavigationUpdate() async {
+    if (_channel == null) return;
     try {
       await _channel?.invokeMethod<void>('updateNavigation', {
         'targetBearing': widget.targetBearing,
         'distance': widget.distance,
+        'guidanceEnabled': widget.guidanceEnabled,
       });
       _lastSentBearing = widget.targetBearing;
       _lastSentDistance = widget.distance;
+      _lastSentAt = DateTime.now();
     } on PlatformException {
       // The native view can disappear while an asynchronous update is pending.
     }
@@ -1955,6 +2130,7 @@ class _DirectionalArBackdropState extends State<DirectionalArBackdrop> {
         'mode': 'navigation',
         'targetBearing': widget.targetBearing,
         'distance': widget.distance,
+        'guidanceEnabled': widget.guidanceEnabled,
       },
       creationParamsCodec: const StandardMessageCodec(),
       onPlatformViewCreated: _onCreated,
@@ -2083,7 +2259,7 @@ class ArRouteReadyBadge extends StatelessWidget {
           Icon(Icons.check_circle_rounded, color: Color(0xFF82E6AC), size: 18),
           SizedBox(width: 7),
           Text(
-            'Ruta anclada al piso',
+            'Dirección anclada al piso',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
           ),
         ],
@@ -2146,10 +2322,12 @@ class TopGuideBar extends StatelessWidget {
     super.key,
     required this.destination,
     required this.distance,
+    this.onCopyDiagnostics,
   });
 
   final InterestPoint destination;
   final double distance;
+  final VoidCallback? onCopyDiagnostics;
 
   @override
   Widget build(BuildContext context) {
@@ -2185,7 +2363,7 @@ class TopGuideBar extends StatelessWidget {
                 Text(
                   destination.isImported
                       ? '${formatDistance(distance)} · Piso ${destination.floor}'
-                      : '${formatDistance(distance)} al destino',
+                      : '${formatDistance(distance)} aprox. al destino',
                   style: const TextStyle(
                     color: Colors.white70,
                     fontWeight: FontWeight.w700,
@@ -2194,6 +2372,12 @@ class TopGuideBar extends StatelessWidget {
               ],
             ),
           ),
+          if (onCopyDiagnostics != null)
+            IconButton(
+              tooltip: 'Copiar diagnóstico de la prueba',
+              onPressed: onCopyDiagnostics,
+              icon: const Icon(Icons.copy_all_outlined, color: Colors.white),
+            ),
         ],
       ),
     );
@@ -2346,6 +2530,22 @@ class ArrivalMarker extends StatelessWidget {
   }
 }
 
+class NavigationStatusBanner extends StatelessWidget {
+  const NavigationStatusBanner({super.key, required this.message});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+            color: const Color(0xE6101419),
+            borderRadius: BorderRadius.circular(8)),
+        child: Text(message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white, fontSize: 16)),
+      );
+}
+
 class NavigationPanel extends StatelessWidget {
   const NavigationPanel({
     super.key,
@@ -2357,8 +2557,10 @@ class NavigationPanel extends StatelessWidget {
     required this.targetBearing,
     required this.horizontalAccuracy,
     required this.sensorProblem,
-    required this.arrived,
-    required this.bearingReliable,
+    required this.instruction,
+    required this.guidanceEnabled,
+    required this.destinationAccuracy,
+    required this.gpsAgeSeconds,
     required this.arTrackingState,
     required this.floorDetected,
   });
@@ -2371,19 +2573,17 @@ class NavigationPanel extends StatelessWidget {
   final double targetBearing;
   final double horizontalAccuracy;
   final String? sensorProblem;
-  final bool arrived;
-  final bool bearingReliable;
+  final String instruction;
+  final bool guidanceEnabled;
+  final double destinationAccuracy;
+  final int gpsAgeSeconds;
   final String? arTrackingState;
   final bool? floorDetected;
 
   @override
   Widget build(BuildContext context) {
-    final instruction = headingDegrees == null
-        ? 'Esperando orientación'
-        : arrived
-            ? 'Llegaste al punto'
-            : instructionFor(relativeBearing);
-    return Container(
+    return SingleChildScrollView(
+        child: Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xE6101419),
@@ -2401,14 +2601,13 @@ class NavigationPanel extends StatelessWidget {
                   color: Colors.white.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: Transform.rotate(
-                  angle: (headingDegrees ?? 0) * -math.pi / 180,
-                  child: const Icon(
-                    Icons.navigation_rounded,
-                    color: Color(0xFF65A8FF),
-                    size: 34,
-                  ),
-                ),
+                child: guidanceEnabled
+                    ? Transform.rotate(
+                        angle: relativeBearing * math.pi / 180,
+                        child: const Icon(Icons.navigation_rounded,
+                            color: Color(0xFF65A8FF), size: 34))
+                    : const Icon(Icons.location_searching,
+                        color: Color(0xFFFFC66E), size: 30),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -2416,7 +2615,7 @@ class NavigationPanel extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      formatDistance(distance),
+                      '${formatDistance(distance)} aprox.',
                       style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 16,
@@ -2425,30 +2624,13 @@ class NavigationPanel extends StatelessWidget {
                     ),
                     Text(
                       instruction,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 23,
+                        fontSize: 19,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                   ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF173557),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  'AUTO',
-                  style: TextStyle(
-                    color: Color(0xFF8DC1FF),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                  ),
                 ),
               ),
             ],
@@ -2465,7 +2647,7 @@ class NavigationPanel extends StatelessWidget {
                 ),
               ),
               Text(
-                'GPS ±${horizontalAccuracy.toStringAsFixed(0)} m',
+                '${guidanceEnabled ? 'GPS' : 'PAUSA'} ±${horizontalAccuracy.toStringAsFixed(0)} m',
                 style: TextStyle(
                   color: horizontalAccuracy <= 10
                       ? const Color(0xFF8BE3B1)
@@ -2478,19 +2660,22 @@ class NavigationPanel extends StatelessWidget {
           ),
           if (compassAccuracyDegrees != null || arTrackingState != null) ...[
             const SizedBox(height: 7),
-            Row(
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
               children: [
                 if (compassAccuracyDegrees != null)
-                  Expanded(
-                    child: Text(
-                      'Brújula ±${compassAccuracyDegrees!.toStringAsFixed(0)}°',
-                      style: TextStyle(
-                        color: compassAccuracyDegrees! <= 20
-                            ? const Color(0xFF8BE3B1)
-                            : const Color(0xFFFFC66E),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
+                  Text(
+                    compassAccuracyDegrees! >= 0
+                        ? 'Brújula ±${compassAccuracyDegrees!.toStringAsFixed(0)}°'
+                        : 'Brújula sin precisión disponible',
+                    style: TextStyle(
+                      color: compassAccuracyDegrees! >= 0 &&
+                              compassAccuracyDegrees! <= 20
+                          ? const Color(0xFF8BE3B1)
+                          : const Color(0xFFFFC66E),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 if (arTrackingState != null)
@@ -2509,13 +2694,14 @@ class NavigationPanel extends StatelessWidget {
               ],
             ),
           ],
-          if (!bearingReliable && !arrived) ...[
-            const SizedBox(height: 9),
-            const Text(
-              'El destino está demasiado cerca para la precisión GPS actual; la dirección puede variar.',
-              style: TextStyle(color: Color(0xFFFFC66E), fontSize: 12),
-            ),
-          ],
+          const SizedBox(height: 7),
+          Text(
+            'Destino: ${destinationAccuracy.isFinite && destinationAccuracy > 0 ? '±${destinationAccuracy.toStringAsFixed(0)} m' : 'precisión desconocida'} · GPS hace ${math.max(0, gpsAgeSeconds)} s',
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+          const SizedBox(height: 7),
+          const Text('Dirección en línea recta. Confirma pasillos y piso.',
+              style: TextStyle(color: Colors.white70, fontSize: 12)),
           if (sensorProblem != null) ...[
             const SizedBox(height: 9),
             Text(
@@ -2525,7 +2711,7 @@ class NavigationPanel extends StatelessWidget {
           ],
         ],
       ),
-    );
+    ));
   }
 }
 
@@ -2586,7 +2772,7 @@ double? preferredCameraHeading({
   required double? headingForCameraMode,
 }) {
   final value = isIOS ? (headingForCameraMode ?? heading) : heading;
-  if (value == null || !value.isFinite) return null;
+  if (value == null || !value.isFinite || value < 0) return null;
   return normalizeDegrees(value);
 }
 
@@ -2601,13 +2787,6 @@ double smoothHeadingDegrees({
   return normalizeDegrees(previous + delta * factor.clamp(0.0, 1.0));
 }
 
-bool navigationBearingIsReliable({
-  required double distance,
-  required double horizontalAccuracy,
-}) {
-  return distance >= math.max(4, horizontalAccuracy * 1.5);
-}
-
 String trackingStateMessage(String state) {
   return switch (state) {
     'normal' => 'Seguimiento estable',
@@ -2620,9 +2799,20 @@ String trackingStateMessage(String state) {
   };
 }
 
-String instructionFor(double relativeBearing) {
+String instructionFor(double relativeBearing, {String? previous}) {
   final signed = shortestSignedAngle(relativeBearing);
   final absolute = signed.abs();
+  // Keep a five-degree margin at each boundary to avoid alternating commands.
+  final retain = switch (previous) {
+    'Sigue derecho' => absolute <= 17,
+    'Ve hacia la derecha' => signed >= 7 && signed <= 55,
+    'Ve hacia la izquierda' => signed <= -7 && signed >= -55,
+    'Gira a la derecha' => signed >= 45 && signed <= 130,
+    'Gira a la izquierda' => signed <= -45 && signed >= -130,
+    'Date la vuelta' => absolute >= 120,
+    _ => false,
+  };
+  if (retain) return previous!;
   if (absolute <= 12) return 'Sigue derecho';
   if (absolute <= 50) {
     return signed > 0 ? 'Ve hacia la derecha' : 'Ve hacia la izquierda';
