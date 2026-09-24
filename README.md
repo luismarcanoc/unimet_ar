@@ -1,121 +1,87 @@
-# UNIMET AR
+# UNIMET AR + Horarios
 
-Prototipo Flutter para probar una guia visual AR usando ubicacion, brujula,
-ARKit y destinos importados desde el registro de salones.
+Aplicacion Flutter para importar un Plan Horario UNIMET, consultar clases y
+buscar salones con las coordenadas reales del registro. El PDF se procesa en el
+telefono; no se envia a un servidor. El OCR original de escritorio se conserva
+completo en `OCR_horario/`, junto con sus siete horarios, flujograma, catalogo,
+ilustracion, pruebas y resultados CSV.
 
-La primera version esta pensada para pruebas fisicas en casa:
+## Empezar
 
-- marcas uno o mas puntos de interes,
-- eliges un unico destino,
-- abres una vista con camara,
-- ves una flecha tridimensional y la distancia aproximada,
-- la brujula del telefono orienta la flecha automaticamente,
-- la ubicacion en vivo actualiza la distancia mientras caminas.
+- [Integracion, instalacion y uso](docs/INTEGRACION_HORARIOS.md).
+- [Prueba conjunta en UNIMET: horario, GPS y dos QR](docs/PRUEBA_HORARIOS_QR_UNIMET.md).
+- [Instalacion desde cero en Mac](docs/INSTALACION_MAC_COMPLETA.md).
+- [Android](docs/TUTORIAL_ANDROID.md).
+- [Diagnostico detallado de GPS](docs/PRUEBA_FISICA_UNIMET.md).
 
-Los puntos y el ultimo CSV importado quedan guardados en el telefono. El CSV se
-puede reemplazar cuando se exporte una version nueva desde el formulario.
+Se requiere Flutter >=3.44, Dart >=3.12 e iOS >=15.5. En la Mac ahora se necesita
+CocoaPods para ML Kit, aunque otros plugins usen Swift Package Manager.
 
-## Guia Completa
-
-Lee el tutorial paso a paso aqui:
-
-[docs/TUTORIAL_ANDROID.md](docs/TUTORIAL_ANDROID.md)
-
-Para iPhone/macOS:
-
-[docs/TUTORIAL_IOS.md](docs/TUTORIAL_IOS.md)
-
-Instalacion completa desde cero en Mac:
-
-[docs/INSTALACION_MAC_COMPLETA.md](docs/INSTALACION_MAC_COMPLETA.md)
-
-Prueba de orientacion, flechas y salones en UNIMET:
-
-[docs/PRUEBA_FISICA_UNIMET.md](docs/PRUEBA_FISICA_UNIMET.md)
-
-## Comandos Rapidos
-
-Desde esta carpeta:
-
-```powershell
+```bash
 flutter pub get
-flutter devices
-flutter run
+flutter analyze
+flutter test
+flutter run --release -d ID_DEL_TELEFONO
 ```
 
-Si necesitas regenerar Android/iOS:
+En Mac, instalar CocoaPods (`brew install cocoapods`) si falta. La primera
+compilacion descarga dependencias; seguir la guia de integracion antes de abrir
+`ios/Runner.xcworkspace` en Xcode. No usar `flutter create` sobre este proyecto.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\tool\setup_flutter_project.ps1
-```
+## Flujo Actual
 
-## Estructura Importante
+1. **Salones:** importar el CSV real exportado desde el formulario de registro.
+2. **Horario:** importar un PDF de Plan Horario o el CSV individual del OCR.
+3. Revisar y confirmar las clases; filtrar por dia o exportar el horario a CSV.
+4. Elegir **Ir al salon** desde una clase o buscarlo en **Salones**.
+5. Opcional: leer uno de los QR de A1 con el boton QR de la app.
 
-```text
-lib/main.dart                      Codigo principal del prototipo
-lib/salon_csv.dart                 Lectura y validacion del CSV de salones
-pubspec.yaml                       Dependencias Flutter
-android/                           Proyecto Android generado
-ios/                               Proyecto iOS generado
-tool/setup_flutter_project.ps1     Script para regenerar el proyecto nativo
-docs/TUTORIAL_ANDROID.md           Tutorial de instalacion, ejecucion y uso
-docs/TUTORIAL_IOS.md               Tutorial para compilar/probar en iPhone
-docs/INSTALACION_MAC_COMPLETA.md   Instalacion completa en Mac desde cero
-docs/PRUEBA_FISICA_UNIMET.md       Checklist para la prueba en campo
-```
+Las materias se cruzan por codigo con el catalogo completo. Las sesiones que
+comparten materia, hora, aula, seccion y profesor se agrupan por dias. Un aula
+sin registro no recibe coordenadas de otra: se muestra sin destino disponible.
 
-## Estado Actual
+No se generan puntos de casa ni coordenadas ficticias. Los registros personales
+de versiones anteriores permanecen guardados, pero no aparecen en esta interfaz.
+Los datos importados se guardan en ese telefono; importar un archivo no sincroniza
+automaticamente otros dispositivos.
 
-El proyecto ya tiene:
+## QR Imprimibles
 
-- Flutter app base.
-- Soporte Android/iOS generado.
-- Permiso de camara en Android.
-- Permiso de camara en iOS.
-- Permisos de ubicacion en Android/iOS.
-- Registro, seleccion y borrado de puntos de interes.
-- Prevencion de puntos duplicados a menos de 2 metros.
-- Tutorial emergente durante el primer uso.
-- Brujula automatica y seguimiento de ubicacion en vivo.
-- Rumbo especifico para la camara y diagnostico de precision.
-- Guia iOS con flechas 3D ancladas a un piso detectado por ARKit.
-- Importacion, busqueda y seleccion de salones desde CSV.
-- Prueba nativa iOS con QR, ARKit World Tracking y flechas 3D ancladas.
-- Filtrado de lecturas GPS antiguas, imprecisas y saltos incompatibles con caminar.
-- Pausa de flechas cuando la precision del telefono y del destino no permite guiar.
-- Indicador relativo al destino y rumbo de camara con suavizado temporal.
-- Diagnostico copiable desde la guia para compartir resultados de campo.
+- [A1 - Planta baja](output/pdf/QR_A1-PB.pdf).
+- [A1 - Piso 1](output/pdf/QR_A1-P1.pdf).
 
-La guia GPS indica una direccion en linea recta, no una ruta por pasillos.
-No confirma una llegada exacta ni identifica el piso mediante GPS.
-Para probar esta version, seguir [PRUEBA_FISICA_UNIMET.md](docs/PRUEBA_FISICA_UNIMET.md)
-y completar [PLANTILLA_RESULTADOS_GPS.md](docs/PLANTILLA_RESULTADOS_GPS.md).
+Son pisos propuestos pendientes de confirmar en campo. Estos QR **identifican
+el piso y filtran salones; no recalibran GPS ni posicionan anclas ARKit**. Su
+registro conserva coordenadas y orientacion sin asignar, nunca inventadas.
+La guia a los salones sigue usando las coordenadas importadas.
 
-## Prueba QR + ARKit En iPhone
+## Limites Importantes
 
-La hoja A4 lista para imprimir esta en:
+La flecha GPS indica direccion en linea recta: no calcula rutas por pasillos,
+escaleras o paredes, ni garantiza precision de 2 metros. Se conservan el filtro
+GPS, la pausa con mala precision, el rumbo de camara y el diagnostico anterior.
+ARKit y el OCR de imagen deben comprobarse fisicamente en iPhone; en Android la
+guia conserva su implementacion de camara y brujula.
 
-```text
-output/pdf/CASA_QR_001_20CM.pdf
-```
+Las pruebas antiguas CASA-QR y su codigo nativo se conservan como referencia,
+pero no son destinos ni acciones de la nueva pantalla principal. No confundir
+sus instrucciones historicas con la prueba actual de A1.
 
-Abre ese archivo en una computadora, imprime al 100% y desactiva `Ajustar a pagina`.
-Confirma que el QR mida exactamente 20 x 20 cm y que la linea de control mida 5 cm.
-Pegalo plano y vertical, con el centro a 1,50 m del piso. Tambien se conservan las
-versiones PNG, SVG y HTML en `docs/markers/`.
+## Estructura
 
-En el iPhone:
+| Ruta | Uso |
+| --- | --- |
+| `lib/campus_home.dart` | Horario, busqueda, importacion y seleccion real |
+| `lib/schedule.dart` | Validacion, materias, agrupacion y CSV |
+| `lib/schedule_import.dart` | PDFium y OCR ML Kit en el telefono |
+| `lib/salon_csv.dart` | CSV del formulario de coordenadas |
+| `lib/floor_markers.dart`, `lib/floor_scanner.dart` | Identificacion de pisos |
+| `lib/main.dart`, `lib/gps_navigation.dart` | Guia GPS y AR existente |
+| `OCR_horario/` | Proyecto Python original completo, sin entornos ni cache |
+| `docs/markers/floor_anchors.json` | Registro de QR y mediciones pendientes |
+| `tool/generate_floor_qrs.py` | Regeneracion de los QR y hojas PDF |
+| `output/pdf/` | Documentos imprimibles versionados |
 
-1. Abre `Probar QR + ARKit`.
-2. Mueve el telefono lentamente mientras ARKit reconoce el entorno.
-3. Apunta al marcador `CASA-QR-001` desde 1 o 2 metros.
-4. Al detectarlo apareceran cuatro flechas sobre el piso hacia la derecha del QR.
-
-Esta prueba solo aparece en iOS. La ruta mide 3 metros y sirve para comprobar
-anclaje, escala y estabilidad antes de incorporar los salones reales.
-
-Para probarlo en telefono real, conecta un Android con Depuracion USB activa y corre:
-
-```powershell
-flutter run
-```
+Las siete muestras PDF se prueban contra los CSV originales en `flutter test`.
+Los PDF contienen datos personales de ejemplo del proyecto original; no hacer
+publico el repositorio ni redistribuir esas muestras sin revisar su contenido.

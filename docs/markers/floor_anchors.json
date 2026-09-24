@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "status": "proposed_floors_pending_field_confirmation",
+  "markers": [
+    {
+      "id": "A1-PB",
+      "building": "A1",
+      "floor": "PB",
+      "label": "A1 - Planta baja",
+      "payload": "unimet-ar://floor/A1/PB?v=1",
+      "latitude": null,
+      "longitude": null,
+      "headingDegrees": null,
+      "heightAboveFloorMeters": null,
+      "installationReference": null,
+      "calibrated": false
+    },
+    {
+      "id": "A1-P1",
+      "building": "A1",
+      "floor": "1",
+      "label": "A1 - Piso 1",
+      "payload": "unimet-ar://floor/A1/1?v=1",
+      "latitude": null,
+      "longitude": null,
+      "headingDegrees": null,
+      "heightAboveFloorMeters": null,
+      "installationReference": null,
+      "calibrated": false
+    }
+  ]
+}

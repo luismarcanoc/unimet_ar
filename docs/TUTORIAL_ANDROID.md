@@ -2,6 +2,11 @@
 
 Este documento explica como instalar, ejecutar y usar el prototipo `unimet_ar` sin depender del chat.
 
+Actualizacion de horarios: usar Flutter >=3.44 y leer
+[INTEGRACION_HORARIOS.md](INTEGRACION_HORARIOS.md). La pantalla actual usa Horario
+y Salones con coordenadas importadas; los pasos historicos de marcar puntos
+personales no corresponden al flujo actual.
+
 ## 1. Que Es Este Proyecto
 
 `unimet_ar` es un prototipo Flutter para probar la parte visual de realidad aumentada del mapa UNIMET. Permite marcar ubicaciones reales como puntos de interes y volver a ellas con la camara, el GPS y la brujula del telefono.

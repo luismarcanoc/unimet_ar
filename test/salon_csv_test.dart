@@ -39,4 +39,16 @@ Sin coordenadas,PB,no,-66.2,5
       throwsA(isA<SalonCsvFormatException>()),
     );
   });
+
+  test('rejects non-finite coordinates and ignores non-finite accuracy', () {
+    final result = parseSalonCsv(
+      'salon,piso,latitude,longitude,accuracy\n'
+      'A1-101,1,10.5,-66.8,NaN\n'
+      'A1-102,1,NaN,-66.8,5\n'
+      'A1-103,1,10.5,Infinity,5',
+    );
+    expect(result.records.single.name, 'A1-101');
+    expect(result.records.single.accuracy, 0);
+    expect(result.skippedRows, 2);
+  });
 }

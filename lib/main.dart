@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'salon_csv.dart';
 import 'gps_navigation.dart';
+import 'campus_home.dart';
 
 const _blue = Color(0xFF1769E8);
 const _navy = Color(0xFF081B49);
@@ -52,7 +53,7 @@ class UnimetArApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'Roboto',
       ),
-      home: HomeScreen(cameras: cameras),
+      home: CampusHome(cameras: cameras),
     );
   }
 }

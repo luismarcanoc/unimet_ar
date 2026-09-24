@@ -1,0 +1,34 @@
+﻿DIAS,HORA,AULA,MATERIA(ASIGNATURA),SECCION,PROFESOR,CODIGO,PERIODO,ARCHIVO
+Lunes / Miércoles,10:30-12:00,A1-106,Ecuaciones Diferenciales,4,Mariela Castillo Nava,BPTMI11,2024-007,2024_0072847234420240908224952.pdf
+Martes / Jueves,08:45-10:15,A1-203,Estadística para Ingenieros I,3,Juan Trabucco Ferro,BPTMI06,2024-007,2024_0072847234420240908224952.pdf
+Miércoles / Viernes,08:45-10:15,A2-308,Bases de Datos I,2,Concettina Di Vasta Valente,FPTSP01,2024-007,2024_0072847234420240908224952.pdf
+Jueves,07:00-08:30,A2-206,Computación Emergente,1,Nicolas Araque Volk,FPTSP25,2024-007,2024_0072847234420240908224952.pdf
+Sábado,08:45-12:00,A2-002,Servicio Comunitario,7,Emy Yetzenia González Bravo,BPTDI01,2024-007,2024_0072847234420240908224952.pdf
+Lunes / Miércoles,15:45-17:15,A2-207,Optimización I,2,José Luis Quintero Dávila,FPTSP17,2024-008,2024_0082847234420241213123714.pdf
+Lunes / Miércoles,07:00-08:30,A2-302,Sistemas Operativos,1,Luis Eduardo García Ramírez,BPTSP04,2024-008,2024_0082847234420241213123714.pdf
+Miércoles / Viernes,14:00-15:30,A2-002,Bases de Datos II,1,Mercy Haitana Ospina Torres,FPTSP26,2024-008,2024_0082847234420241213123714.pdf
+Sábado,08:45-12:00,,Servicio Comunitario,7,Emy Yetzenia González Bravo,BPTDI01,2024-008,2024_0082847234420241213123714.pdf
+Martes / Jueves,10:30-12:00,A1-214,Modelos Estocásticos,2,Thais León Muñoz,FPTMI21,2024-008,2024_0082847234420241213123714.pdf
+Lunes / Miércoles,15:45-17:15,A2-207,Optimización I,2,José Luis Quintero Dávila,FPTSP17,2024-008,2024_0082847234420250106064020.pdf
+Lunes / Miércoles,07:00-08:30,A2-302,Sistemas Operativos,1,Luis Eduardo García Ramírez,BPTSP04,2024-008,2024_0082847234420250106064020.pdf
+Miércoles / Viernes,14:00-15:30,A2-002,Bases de Datos II,1,Mercy Haitana Ospina Torres,FPTSP26,2024-008,2024_0082847234420250106064020.pdf
+Sábado,08:45-12:00,,Servicio Comunitario,7,Emy Yetzenia González Bravo,BPTDI01,2024-008,2024_0082847234420250106064020.pdf
+Martes / Jueves,10:30-12:00,A1-214,Modelos Estocásticos,2,Thais León Muñoz,FPTMI21,2024-008,2024_0082847234420250106064020.pdf
+Martes / Jueves,15:45-17:15,A2-002,Gestión de la Cadena de Suministro I,1,Richard José Mejías Rodríguez,FPTPI09,2024-009,2024_0092847234420250411155558.pdf
+Martes / Jueves,08:45-10:15,A1-204,Modelos Estocásticos,1,Thais León Muñoz,FPTMI21,2024-009,2024_0092847234420250411155558.pdf
+Lunes / Miércoles,10:30-12:00,A1-308,Cálculo Numérico,3,Javier Andrés Ovalles Toledo,BPTMM91,2024-009,2024_0092847234420250411155558.pdf
+Martes / Jueves,10:30-12:00,A2-308,Ingeniería de Software,2,Keyla Luz Mila Rivas Essis,FPTSP07,2024-009,2024_0092847234420250411155558.pdf
+Evento Virtual,,Virtual,Gerencia de Proyectos TIC,2,María Angelica Pérez de Ovalles,FPTSP11,2024-009,2024_0092847234420250411155558.pdf
+Martes / Jueves,15:45-17:15,A2-002,Gestión de la Cadena de Suministro I,1,Richard José Mejías Rodríguez,FPTPI09,2024-009,2024_0092847234420250421002330.pdf
+Martes / Jueves,08:45-10:15,A1-204,Modelos Estocásticos,1,Thais León Muñoz,FPTMI21,2024-009,2024_0092847234420250421002330.pdf
+Lunes / Miércoles,10:30-12:00,A1-308,Cálculo Numérico,3,Javier Andrés Ovalles Toledo,BPTMM91,2024-009,2024_0092847234420250421002330.pdf
+Martes / Jueves,10:30-12:00,A2-308,Ingeniería de Software,2,Keyla Luz Mila Rivas Essis,FPTSP07,2024-009,2024_0092847234420250421002330.pdf
+Evento Virtual,,Virtual,Gerencia de Proyectos TIC,2,María Angelica Pérez de Ovalles,FPTSP11,2024-009,2024_0092847234420250421002330.pdf
+Martes / Jueves,07:00-08:30,A2-314,Sistemas de Redes,1,María Jesús Carvajal Mendoza,FPTEN23,2025-007,2025_0072847234420250906190322.pdf
+Lunes / Miércoles,12:15-13:45,SL-006,Simulación,1,José Luis Quintero Dávila,FPTSP20,2025-007,2025_0072847234420250906190322.pdf
+Martes / Jueves,14:00-15:30,A2-007,Optimización II,1,Luis Alfonso Vivas García,FPTSP19,2025-007,2025_0072847234420250906190322.pdf
+Evento Virtual,,Virtual,Taller de Trabajo de Grado,2,José Alberto Peña Echezuria,FPTSP22,2025-007,2025_0072847234420250906190322.pdf
+Evento Virtual,,Virtual,Introduccion,1,Marisela Ascanio Lara,FGELI17,2025-007,2025_0072847234420250906190322.pdf
+Martes / Jueves,07:00-08:30,A1-203,Computación Emergente,2,Isaac José Olivares Arenas,FPTSP25,2025-009,2025_0092847234420260414060218.pdf
+Evento Virtual,,Virtual,Seguridad de la Información,1,Tibor Hajdu Klamencsik,FPTSP18,2025-009,2025_0092847234420260414060218.pdf
+Evento Virtual,,Virtual,Is El Hacker,1,Tibor Hajdu Klamencsik,FPSSP04,2025-009,2025_0092847234420260414060218.pdf

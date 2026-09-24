@@ -160,5 +160,6 @@ String _cell(List<dynamic> row, int index) {
 
 double? _number(String value) {
   if (value.isEmpty) return null;
-  return double.tryParse(value.replaceAll(',', '.'));
+  final number = double.tryParse(value.replaceAll(',', '.'));
+  return number != null && number.isFinite ? number : null;
 }

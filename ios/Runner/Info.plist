@@ -27,9 +27,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>La camara se usa para mostrar la guia AR sobre el entorno.</string>
+	<string>La camara se usa para mostrar la guia AR y leer los QR de los pisos.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Tu ubicacion se usa para marcar puntos de interes y guiarte hacia ellos.</string>
+	<string>Tu ubicacion se usa para orientarte hacia los salones registrados de UNIMET.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

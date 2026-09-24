@@ -2,6 +2,11 @@
 
 Este documento explica como preparar una Mac desde cero para instalar, compilar y ejecutar la app Flutter `unimet_ar` en un iPhone fisico.
 
+Actualizacion 23/09/2026: usar Flutter >=3.44, Dart >=3.12 e iOS >=15.5.
+CocoaPods es necesario para el OCR nuevo. Despues de la instalacion base, seguir
+[INTEGRACION_HORARIOS.md](INTEGRACION_HORARIOS.md); el flujo actual usa Horario y
+Salones y reemplaza los pasos historicos de puntos personales y CASA-QR.
+
 ## 1. Requisitos
 
 Necesitas:

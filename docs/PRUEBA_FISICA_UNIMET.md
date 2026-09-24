@@ -1,6 +1,11 @@
 # Prueba GPS y flechas en UNIMET
 
-Actualizado: 22 de septiembre de 2026.
+Actualizado: 23 de septiembre de 2026.
+
+La interfaz actual usa las pestanas Horario y Salones. Para instalar las nuevas
+dependencias OCR y combinar horarios/QR con esta prueba, leer primero
+[INTEGRACION_HORARIOS.md](INTEGRACION_HORARIOS.md) y
+[PRUEBA_HORARIOS_QR_UNIMET.md](PRUEBA_HORARIOS_QR_UNIMET.md).
 
 Esta prueba usa GPS y no necesita QR. La guia apunta en linea recta al destino:
 no calcula una ruta por pasillos ni determina el piso actual. El objetivo es
@@ -35,7 +40,7 @@ y evita ahorro de energia durante la comparacion.
 ## 2. Preparar destinos
 
 1. Exporta el CSV del formulario y guardalo en Archivos del iPhone.
-2. Importalo desde `Cargar salones UNIMET`.
+2. Importalo desde la pestana `Salones`, icono de importar coordenadas.
 3. Comprueba nombre, piso, referencia y ubicacion fisica del destino. No uses un
    punto de casa estando en UNIMET. Un destino mal registrado tambien desvia la flecha.
 4. Elige un punto visible en exterior y un salon del mismo piso en un pasillo recto.

@@ -2,6 +2,11 @@
 
 Este documento explica como trabajar con este proyecto Flutter si van a probarlo en un iPhone.
 
+Actualizacion 23/09/2026: la integracion de horarios requiere iOS >=15.5,
+Flutter >=3.44 y CocoaPods para ML Kit. La nueva pantalla principal tiene Horario
+y Salones; los pasos historicos de crear puntos personales y CASA-QR ya no son
+el flujo actual. Leer [INTEGRACION_HORARIOS.md](INTEGRACION_HORARIOS.md) primero.
+
 ## 1. Punto Clave
 
 El codigo Flutter puede desarrollarse en Windows, macOS o Linux.
@@ -54,7 +59,7 @@ En la Mac instala:
 
 1. Xcode desde App Store.
 2. Flutter.
-3. CocoaPods, si Flutter lo pide.
+3. CocoaPods, necesario para el OCR de horarios.
 
 Verifica:
 
