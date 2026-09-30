@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'salon_csv.dart';
 import 'gps_navigation.dart';
 import 'campus_home.dart';
+import 'route_network.dart';
 
 const _blue = Color(0xFF1769E8);
 const _navy = Color(0xFF081B49);
@@ -86,18 +87,18 @@ class InterestPoint {
   final bool isImported;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'latitude': latitude,
-        'longitude': longitude,
-        'accuracy': accuracy,
-        'createdAt': createdAt.toIso8601String(),
-        'floor': floor,
-        'reference': reference,
-        'altitude': altitude,
-        'altitudeAccuracy': altitudeAccuracy,
-        'isImported': isImported,
-      };
+    'id': id,
+    'name': name,
+    'latitude': latitude,
+    'longitude': longitude,
+    'accuracy': accuracy,
+    'createdAt': createdAt.toIso8601String(),
+    'floor': floor,
+    'reference': reference,
+    'altitude': altitude,
+    'altitudeAccuracy': altitudeAccuracy,
+    'isImported': isImported,
+  };
 
   factory InterestPoint.fromJson(Map<String, dynamic> json) {
     return InterestPoint(
@@ -178,9 +179,7 @@ class _HomeScreenState extends State<HomeScreen> {
     for (final rawPoint in rawPoints) {
       try {
         points.add(
-          InterestPoint.fromJson(
-            jsonDecode(rawPoint) as Map<String, dynamic>,
-          ),
+          InterestPoint.fromJson(jsonDecode(rawPoint) as Map<String, dynamic>),
         );
       } catch (_) {
         // Ignore malformed local records instead of blocking the app.
@@ -189,9 +188,7 @@ class _HomeScreenState extends State<HomeScreen> {
     for (final rawSalon in rawSalons) {
       try {
         salons.add(
-          InterestPoint.fromJson(
-            jsonDecode(rawSalon) as Map<String, dynamic>,
-          ),
+          InterestPoint.fromJson(jsonDecode(rawSalon) as Map<String, dynamic>),
         );
       } catch (_) {
         // Ignore malformed imports so one row cannot block the app.
@@ -203,8 +200,8 @@ class _HomeScreenState extends State<HomeScreen> {
       _salons = salons;
       _selectedPointId =
           [...points, ...salons].any((point) => point.id == selectedPointId)
-              ? selectedPointId
-              : null;
+          ? selectedPointId
+          : null;
       _loading = false;
     });
   }
@@ -372,8 +369,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _markPoint() async {
     final name = await _askPointName();
     if (name == null || !mounted) return;
-    if (_points
-        .any((point) => point.name.toLowerCase() == name.toLowerCase())) {
+    if (_points.any(
+      (point) => point.name.toLowerCase() == name.toLowerCase(),
+    )) {
       _showMessage('Ya existe un punto con ese nombre.');
       return;
     }
@@ -421,10 +419,12 @@ class _HomeScreenState extends State<HomeScreen> {
       _showMessage('Punto guardado y seleccionado.$warning');
     } on TimeoutException {
       _showMessage(
-          'La ubicación tardó demasiado. Inténtalo cerca de una ventana.');
+        'La ubicación tardó demasiado. Inténtalo cerca de una ventana.',
+      );
     } catch (_) {
       _showMessage(
-          'No se pudo obtener una ubicación precisa. Inténtalo de nuevo.');
+        'No se pudo obtener una ubicación precisa. Inténtalo de nuevo.',
+      );
     } finally {
       if (mounted) setState(() => _working = false);
     }
@@ -459,9 +459,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
       if (bytes.length > 5 * 1024 * 1024) {
-        throw const SalonCsvFormatException(
-          'El CSV supera el límite de 5 MB.',
-        );
+        throw const SalonCsvFormatException('El CSV supera el límite de 5 MB.');
       }
       final result = parseSalonCsv(utf8.decode(bytes));
       final importedAt = DateTime.now();
@@ -518,7 +516,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _clearImportedSalons() async {
-    final confirmed = await showDialog<bool>(
+    final confirmed =
+        await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
             title: const Text('Quitar salones importados'),
@@ -572,7 +571,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _deletePoint(InterestPoint point) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed =
+        await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
             title: const Text('Borrar punto'),
@@ -636,9 +636,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openArKitTrial() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ArKitQrTestScreen()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const ArKitQrTestScreen()));
   }
 
   @override
@@ -744,8 +744,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             filled: true,
                             fillColor: Colors.white,
                             border: const OutlineInputBorder(
-                              borderRadius:
-                                  BorderRadius.all(Radius.circular(8)),
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(8),
+                              ),
                               borderSide: BorderSide.none,
                             ),
                           ),
@@ -755,9 +756,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     if (_filteredSalons.isEmpty)
                       const SliverPadding(
                         padding: EdgeInsets.symmetric(horizontal: 20),
-                        sliver: SliverToBoxAdapter(
-                          child: SearchEmptyState(),
-                        ),
+                        sliver: SliverToBoxAdapter(child: SearchEmptyState()),
                       )
                     else
                       SliverPadding(
@@ -811,11 +810,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class OnboardingStep extends StatelessWidget {
-  const OnboardingStep({
-    super.key,
-    required this.number,
-    required this.text,
-  });
+  const OnboardingStep({super.key, required this.number, required this.text});
 
   final String number;
   final String text;
@@ -840,10 +835,7 @@ class OnboardingStep extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(color: _navy, height: 1.4),
-          ),
+          child: Text(text, style: const TextStyle(color: _navy, height: 1.4)),
         ),
       ],
     );
@@ -892,11 +884,7 @@ class HomeHeader extends StatelessWidget {
 }
 
 class MarkPointPanel extends StatelessWidget {
-  const MarkPointPanel({
-    super.key,
-    required this.busy,
-    required this.onMark,
-  });
+  const MarkPointPanel({super.key, required this.busy, required this.onMark});
 
   final bool busy;
   final VoidCallback onMark;
@@ -1034,11 +1022,7 @@ class SalonCsvPanel extends StatelessWidget {
 }
 
 class SectionHeader extends StatelessWidget {
-  const SectionHeader({
-    super.key,
-    required this.title,
-    required this.count,
-  });
+  const SectionHeader({super.key, required this.title, required this.count});
 
   final String title;
   final int count;
@@ -1059,10 +1043,7 @@ class SectionHeader extends StatelessWidget {
         ),
         Text(
           '$count',
-          style: const TextStyle(
-            color: _muted,
-            fontWeight: FontWeight.w800,
-          ),
+          style: const TextStyle(color: _muted, fontWeight: FontWeight.w800),
         ),
       ],
     );
@@ -1093,8 +1074,10 @@ class ArKitTrialPanel extends StatelessWidget {
                     color: Color(0xFF163875),
                     borderRadius: BorderRadius.all(Radius.circular(8)),
                   ),
-                  child:
-                      Icon(Icons.qr_code_scanner_rounded, color: Colors.white),
+                  child: Icon(
+                    Icons.qr_code_scanner_rounded,
+                    color: Colors.white,
+                  ),
                 ),
               ),
               SizedBox(width: 14),
@@ -1355,12 +1338,14 @@ class _ArKitQrTestScreenState extends State<ArKitQrTestScreen> {
             Text('1. Imprime CASA-QR-001 exactamente a 20 x 20 cm.'),
             SizedBox(height: 10),
             Text(
-                '2. Pégalo plano y vertical, con su centro a 1,50 m del piso.'),
+              '2. Pégalo plano y vertical, con su centro a 1,50 m del piso.',
+            ),
             SizedBox(height: 10),
             Text('3. Apunta la cámara al QR desde 1 o 2 metros.'),
             SizedBox(height: 10),
             Text(
-                '4. Cuando aparezcan las flechas, camina hacia la derecha del QR.'),
+              '4. Cuando aparezcan las flechas, camina hacia la derecha del QR.',
+            ),
           ],
         ),
         actions: [
@@ -1569,8 +1554,8 @@ class _ArKitStatusPanel extends StatelessWidget {
     final color = hasError
         ? const Color(0xFFFFB4A9)
         : markerDetected
-            ? const Color(0xFF82E6AC)
-            : const Color(0xFF8DC1FF);
+        ? const Color(0xFF82E6AC)
+        : const Color(0xFF8DC1FF);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1583,8 +1568,8 @@ class _ArKitStatusPanel extends StatelessWidget {
             hasError
                 ? Icons.error_outline_rounded
                 : markerDetected
-                    ? Icons.check_circle_outline_rounded
-                    : Icons.qr_code_scanner_rounded,
+                ? Icons.check_circle_outline_rounded
+                : Icons.qr_code_scanner_rounded,
             color: color,
             size: 34,
           ),
@@ -1620,11 +1605,13 @@ class ArGuideScreen extends StatefulWidget {
     required this.cameras,
     required this.initialPosition,
     required this.destination,
+    this.currentFloor,
   });
 
   final List<CameraDescription> cameras;
   final Position initialPosition;
   final InterestPoint destination;
+  final String? currentFloor;
 
   @override
   State<ArGuideScreen> createState() => _ArGuideScreenState();
@@ -1652,10 +1639,14 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
   double? _headingDegrees;
   double? _compassAccuracyDegrees;
   bool _floorDetected = false;
+  bool _floorEstimated = false;
   String _headingSource = 'Brújula';
   String _arTrackingState = 'Inicializando ARKit';
   String? _sensorProblem;
   String? _arError;
+  RouteNetwork? _routeNetwork;
+  CampusRoute? _campusRoute;
+  String? _routeProblem;
   final _navigationArKey = GlobalKey<_DirectionalArBackdropState>();
 
   @override
@@ -1663,6 +1654,7 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
     super.initState();
     _currentPosition = widget.initialPosition;
     _acceptPosition(widget.initialPosition);
+    _loadRouteNetwork();
     if (!Platform.isIOS) _initializeCamera();
     _startLiveTracking();
     _freshnessTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -1687,30 +1679,87 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
     _latestRawPosition = position;
     if (!_gps.add(position, DateTime.now())) return;
     _currentPosition = _gps.position!;
+    _refreshRoute();
+    _updateTargetBearing();
+    _refreshInstruction();
+    _locationProblem = null;
+  }
+
+  void _updateTargetBearing() {
+    final nextPoint = _campusRoute?.nextPoint;
     final next = coordinateBearingDegrees(
       _currentPosition.latitude,
       _currentPosition.longitude,
-      widget.destination.latitude,
-      widget.destination.longitude,
+      nextPoint?.latitude ?? widget.destination.latitude,
+      nextPoint?.longitude ?? widget.destination.longitude,
     );
     _targetBearing = smoothHeadingDegrees(
       previous: _targetBearing,
       next: next,
       factor: 0.65,
     );
-    _refreshInstruction();
-    _locationProblem = null;
+  }
+
+  Future<void> _loadRouteNetwork() async {
+    try {
+      final network = await RouteNetwork.loadAsset();
+      if (!mounted) return;
+      setState(() {
+        _routeNetwork = network;
+        _refreshRoute();
+        _updateTargetBearing();
+        _refreshInstruction();
+      });
+    } on FormatException catch (error) {
+      if (mounted) {
+        setState(() => _routeProblem = error.message);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _routeProblem = 'No se pudo cargar la red peatonal.');
+      }
+    }
+  }
+
+  void _refreshRoute() {
+    final network = _routeNetwork;
+    if (network == null) return;
+    if (network.isEmpty) {
+      _campusRoute = null;
+      _routeProblem = 'Ruta peatonal pendiente de cartografiar';
+      return;
+    }
+    _campusRoute = network.route(
+      latitude: _currentPosition.latitude,
+      longitude: _currentPosition.longitude,
+      destinationName: widget.destination.name,
+      destinationLatitude: widget.destination.latitude,
+      destinationLongitude: widget.destination.longitude,
+      startFloor: widget.currentFloor ?? widget.destination.floor,
+      destinationFloor: widget.destination.floor,
+    );
+    _routeProblem = _campusRoute == null
+        ? 'Fuera de la red peatonal; usando orientación directa'
+        : null;
   }
 
   void _refreshInstruction() {
     if (_targetBearing == null || _headingDegrees == null) return;
-    _turnInstruction = instructionFor(
-      relativeBearingDegrees(_targetBearing!, _headingDegrees!),
-      previous: _turnInstruction,
-    );
+    _turnInstruction =
+        _campusRoute?.instructionFrom(
+          _currentPosition.latitude,
+          _currentPosition.longitude,
+          _headingDegrees,
+        ) ??
+        instructionFor(
+          relativeBearingDegrees(_targetBearing!, _headingDegrees!),
+          previous: _turnInstruction,
+        );
   }
 
-  double get _distance => coordinateDistanceMeters(
+  double get _distance =>
+      _campusRoute?.distanceMeters ??
+      coordinateDistanceMeters(
         _currentPosition.latitude,
         _currentPosition.longitude,
         widget.destination.latitude,
@@ -1718,10 +1767,10 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
       );
 
   GpsGuidance get _gpsState => _gps.guidance(
-        now: DateTime.now(),
-        distance: _distance,
-        destinationAccuracy: widget.destination.accuracy,
-      );
+    now: DateTime.now(),
+    distance: _distance,
+    destinationAccuracy: widget.destination.accuracy,
+  );
 
   bool get _orientationReady =>
       _foreground &&
@@ -1730,24 +1779,34 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
       _headingDegrees != null &&
       (Platform.isIOS
           ? _trackingNormal &&
-              _cameraHeadingValid &&
-              _arError == null &&
-              (_compassAccuracyDegrees == null ||
-                  (_compassAccuracyDegrees! >= 0 &&
-                      _compassAccuracyDegrees! <= 25))
+                _cameraHeadingValid &&
+                _arError == null &&
+                (_compassAccuracyDegrees == null ||
+                    (_compassAccuracyDegrees! >= 0 &&
+                        _compassAccuracyDegrees! <= 25))
           : _compassAccuracyDegrees != null &&
-              _compassAccuracyDegrees! >= 0 &&
-              _compassAccuracyDegrees! <= 25);
+                _compassAccuracyDegrees! >= 0 &&
+                _compassAccuracyDegrees! <= 25);
 
   bool get _canGuide =>
       _gpsState == GpsGuidance.ready &&
       _orientationReady &&
       _locationProblem == null;
 
+  bool get _canRenderArRoute =>
+      Platform.isIOS &&
+      _gpsState == GpsGuidance.ready &&
+      _foreground &&
+      _trackingNormal &&
+      _arError == null &&
+      _locationProblem == null;
+
   void _recordDiagnostic() {
     Map<String, dynamic>? diagnosticPosition(Position? position) =>
-        position?.toJson().map((key, value) =>
-            MapEntry(key, value is num && !value.isFinite ? null : value));
+        position?.toJson().map(
+          (key, value) =>
+              MapEntry(key, value is num && !value.isFinite ? null : value),
+        );
     _diagnostics.add({
       'time': DateTime.now().toUtc().toIso8601String(),
       'raw': diagnosticPosition(_latestRawPosition),
@@ -1764,6 +1823,9 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
       'tracking': _arTrackingState,
       'floorDetected': _floorDetected,
       'guidanceEnabled': _canGuide,
+      'routeMode': _campusRoute == null ? 'direct' : 'walkable_network',
+      'routePoints': _campusRoute?.points.map((point) => point.id).toList(),
+      'routeProblem': _routeProblem,
       'arError': _arError,
       'locationError': _locationProblem,
     });
@@ -1791,8 +1853,9 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
     final backCameras = widget.cameras.where(
       (camera) => camera.lensDirection == CameraLensDirection.back,
     );
-    final camera =
-        backCameras.isNotEmpty ? backCameras.first : widget.cameras.first;
+    final camera = backCameras.isNotEmpty
+        ? backCameras.first
+        : widget.cameras.first;
     _cameraController = CameraController(
       camera,
       ResolutionPreset.high,
@@ -1808,24 +1871,26 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
             distanceFilter: 0,
             activityType: ActivityType.fitness,
             pauseLocationUpdatesAutomatically: false,
-            allowBackgroundLocationUpdates: false)
+            allowBackgroundLocationUpdates: false,
+          )
         : AndroidSettings(
             accuracy: LocationAccuracy.bestForNavigation,
             distanceFilter: 0,
-            intervalDuration: const Duration(seconds: 1));
-    _positionSubscription = Geolocator.getPositionStream(
-      locationSettings: settings,
-    ).listen(
-      (position) {
-        if (mounted) setState(() => _acceptPosition(position));
-      },
-      onError: (_) {
-        if (mounted) {
-          setState(
-              () => _locationProblem = 'No se pudo actualizar la ubicación.');
-        }
-      },
-    );
+            intervalDuration: const Duration(seconds: 1),
+          );
+    _positionSubscription =
+        Geolocator.getPositionStream(locationSettings: settings).listen(
+          (position) {
+            if (mounted) setState(() => _acceptPosition(position));
+          },
+          onError: (_) {
+            if (mounted) {
+              setState(
+                () => _locationProblem = 'No se pudo actualizar la ubicación.',
+              );
+            }
+          },
+        );
 
     final compassEvents = FlutterCompass.events;
     if (compassEvents == null) {
@@ -1891,7 +1956,17 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
           _headingFilter.reset();
         });
       case 'floorDetected':
-        setState(() => _floorDetected = true);
+        setState(() {
+          _floorDetected = true;
+          _floorEstimated = false;
+          _arTrackingState = 'Piso detectado y ruta estable';
+        });
+      case 'floorEstimated':
+        setState(() {
+          _floorDetected = true;
+          _floorEstimated = true;
+          _arTrackingState = 'Altura estimada; buscando más detalles';
+        });
       case 'trackingState':
         final state = arguments['state'] as String? ?? 'limitado';
         setState(() {
@@ -1906,6 +1981,7 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
         setState(() {
           _arError = null;
           _floorDetected = false;
+          _floorEstimated = false;
           _trackingNormal = false;
           _lastHeadingAt = null;
           _cameraHeadingValid = false;
@@ -1916,6 +1992,7 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
         setState(() {
           _arTrackingState = 'ARKit no disponible';
           _floorDetected = false;
+          _floorEstimated = false;
           _trackingNormal = false;
           _lastHeadingAt = null;
           _headingFilter.reset();
@@ -1943,14 +2020,15 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
         ? 0.0
         : relativeBearingDegrees(targetBearing, _headingDegrees!);
     final canGuide = _canGuide;
-    final status = _locationProblem ??
+    final status =
+        _locationProblem ??
         (_gpsState != GpsGuidance.ready
             ? gpsGuidanceMessage(_gpsState)
             : !_orientationReady
-                ? (Platform.isIOS && _trackingNormal && !_cameraHeadingValid
-                    ? 'Levanta la cámara hacia el pasillo'
-                    : 'Esperando orientación fiable')
-                : _turnInstruction ?? instructionFor(relativeBearing));
+            ? (Platform.isIOS && _trackingNormal && !_cameraHeadingValid
+                  ? 'Levanta la cámara hacia el pasillo'
+                  : 'Esperando orientación fiable')
+            : _turnInstruction ?? instructionFor(relativeBearing));
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -1962,7 +2040,7 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
               key: _navigationArKey,
               targetBearing: targetBearing,
               distance: distance,
-              guidanceEnabled: canGuide,
+              guidanceEnabled: _canRenderArRoute,
               onEvent: _handleNavigationArEvent,
             )
           else
@@ -1981,6 +2059,13 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
                     distance: distance,
                     onCopyDiagnostics: _copyDiagnostics,
                   ),
+                  if (_routeProblem != null)
+                    RouteModeBadge(message: _routeProblem!, mapped: false)
+                  else if (_campusRoute != null)
+                    const RouteModeBadge(
+                      message: 'Siguiendo ruta peatonal cartografiada',
+                      mapped: true,
+                    ),
                   const Spacer(),
                   if (_arError != null)
                     ArSessionErrorPanel(
@@ -1990,13 +2075,11 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
                   else if (!canGuide)
                     NavigationStatusBanner(message: status)
                   else if (!Platform.isIOS)
-                    PerspectiveNavigationArrow(
-                      relativeBearing: relativeBearing,
-                    )
+                    PerspectiveNavigationArrow(relativeBearing: relativeBearing)
                   else if (!_floorDetected)
                     ArFloorSearchState(trackingState: _arTrackingState)
                   else
-                    const ArRouteReadyBadge(),
+                    ArRouteReadyBadge(estimated: _floorEstimated),
                   const Spacer(),
                   Flexible(
                     flex: 4,
@@ -2031,10 +2114,49 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
   }
 }
 
-typedef NavigationArEvent = Future<void> Function(
-  String method,
-  Map<String, dynamic> arguments,
-);
+class RouteModeBadge extends StatelessWidget {
+  const RouteModeBadge({
+    super.key,
+    required this.message,
+    required this.mapped,
+  });
+
+  final String message;
+  final bool mapped;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: mapped ? const Color(0xDD174C39) : const Color(0xDD4A3924),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            mapped ? Icons.route_outlined : Icons.warning_amber_rounded,
+            color: Colors.white,
+            size: 17,
+          ),
+          const SizedBox(width: 7),
+          Flexible(
+            child: Text(
+              message,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+typedef NavigationArEvent =
+    Future<void> Function(String method, Map<String, dynamic> arguments);
 
 class DirectionalArBackdrop extends StatefulWidget {
   const DirectionalArBackdrop({
@@ -2084,12 +2206,15 @@ class _DirectionalArBackdropState extends State<DirectionalArBackdrop> {
   @override
   void didUpdateWidget(covariant DirectionalArBackdrop oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final bearingChanged = _lastSentBearing == null ||
+    final bearingChanged =
+        _lastSentBearing == null ||
         shortestSignedAngle(widget.targetBearing - _lastSentBearing!).abs() >=
             2;
-    final distanceChanged = _lastSentDistance == null ||
+    final distanceChanged =
+        _lastSentDistance == null ||
         (widget.distance - _lastSentDistance!).abs() >= 0.5;
-    final heartbeat = _lastSentAt == null ||
+    final heartbeat =
+        _lastSentAt == null ||
         DateTime.now().difference(_lastSentAt!) >= const Duration(seconds: 1);
     if (heartbeat ||
         bearingChanged ||
@@ -2180,12 +2305,18 @@ class ArSessionErrorPanel extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('La sesión AR se detuvo',
-                style: TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.bold)),
+            const Text(
+              'La sesión AR se detuvo',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             const SizedBox(height: 8),
-            SelectableText(message,
-                style: const TextStyle(color: Color(0xFFFFC66E))),
+            SelectableText(
+              message,
+              style: const TextStyle(color: Color(0xFFFFC66E)),
+            ),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: onRetry,
@@ -2243,7 +2374,9 @@ class ArFloorSearchState extends StatelessWidget {
 }
 
 class ArRouteReadyBadge extends StatelessWidget {
-  const ArRouteReadyBadge({super.key});
+  const ArRouteReadyBadge({super.key, required this.estimated});
+
+  final bool estimated;
 
   @override
   Widget build(BuildContext context) {
@@ -2254,14 +2387,23 @@ class ArRouteReadyBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFF72D9AA)),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.check_circle_rounded, color: Color(0xFF82E6AC), size: 18),
-          SizedBox(width: 7),
+          Icon(
+            estimated ? Icons.auto_awesome_motion : Icons.check_circle_rounded,
+            color: const Color(0xFF82E6AC),
+            size: 18,
+          ),
+          const SizedBox(width: 7),
           Text(
-            'Dirección anclada al piso',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+            estimated
+                ? 'Ruta activa; refinando el piso'
+                : 'Ruta anclada al entorno',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ],
       ),
@@ -2418,10 +2560,7 @@ class SensorLoadingState extends StatelessWidget {
 }
 
 class PerspectiveNavigationArrow extends StatelessWidget {
-  const PerspectiveNavigationArrow({
-    super.key,
-    required this.relativeBearing,
-  });
+  const PerspectiveNavigationArrow({super.key, required this.relativeBearing});
 
   final double relativeBearing;
 
@@ -2523,7 +2662,10 @@ class ArrivalMarker extends StatelessWidget {
         border: Border.all(color: Colors.white, width: 5),
         boxShadow: const [
           BoxShadow(
-              color: Colors.black38, blurRadius: 24, offset: Offset(0, 12)),
+            color: Colors.black38,
+            blurRadius: 24,
+            offset: Offset(0, 12),
+          ),
         ],
       ),
       child: const Icon(Icons.flag_rounded, color: Colors.white, size: 72),
@@ -2537,14 +2679,17 @@ class NavigationStatusBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-            color: const Color(0xE6101419),
-            borderRadius: BorderRadius.circular(8)),
-        child: Text(message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white, fontSize: 16)),
-      );
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: const Color(0xE6101419),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Text(
+      message,
+      textAlign: TextAlign.center,
+      style: const TextStyle(color: Colors.white, fontSize: 16),
+    ),
+  );
 }
 
 class NavigationPanel extends StatelessWidget {
@@ -2584,135 +2729,146 @@ class NavigationPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-        child: Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xE6101419),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 54,
-                height: 54,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xE6101419),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: guidanceEnabled
+                      ? Transform.rotate(
+                          angle: relativeBearing * math.pi / 180,
+                          child: const Icon(
+                            Icons.navigation_rounded,
+                            color: Color(0xFF65A8FF),
+                            size: 34,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.location_searching,
+                          color: Color(0xFFFFC66E),
+                          size: 30,
+                        ),
                 ),
-                child: guidanceEnabled
-                    ? Transform.rotate(
-                        angle: relativeBearing * math.pi / 180,
-                        child: const Icon(Icons.navigation_rounded,
-                            color: Color(0xFF65A8FF), size: 34))
-                    : const Icon(Icons.location_searching,
-                        color: Color(0xFFFFC66E), size: 30),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${formatDistance(distance)} aprox.',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        instruction,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    headingDegrees == null
+                        ? 'Brújula: esperando datos'
+                        : '$headingSource: ${headingDegrees!.toStringAsFixed(0)}°  ·  Destino: ${targetBearing.toStringAsFixed(0)}°',
+                    style: const TextStyle(color: Colors.white60, fontSize: 12),
+                  ),
+                ),
+                Text(
+                  '${guidanceEnabled ? 'GPS' : 'PAUSA'} ±${horizontalAccuracy.toStringAsFixed(0)} m',
+                  style: TextStyle(
+                    color: horizontalAccuracy <= 10
+                        ? const Color(0xFF8BE3B1)
+                        : const Color(0xFFFFC66E),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            if (compassAccuracyDegrees != null || arTrackingState != null) ...[
+              const SizedBox(height: 7),
+              Wrap(
+                spacing: 12,
+                runSpacing: 4,
+                children: [
+                  if (compassAccuracyDegrees != null)
                     Text(
-                      '${formatDistance(distance)} aprox.',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 16,
+                      compassAccuracyDegrees! >= 0
+                          ? 'Brújula ±${compassAccuracyDegrees!.toStringAsFixed(0)}°'
+                          : 'Brújula sin precisión disponible',
+                      style: TextStyle(
+                        color:
+                            compassAccuracyDegrees! >= 0 &&
+                                compassAccuracyDegrees! <= 20
+                            ? const Color(0xFF8BE3B1)
+                            : const Color(0xFFFFC66E),
+                        fontSize: 12,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
+                  if (arTrackingState != null)
                     Text(
-                      instruction,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 19,
-                        fontWeight: FontWeight.w900,
+                      floorDetected == true
+                          ? 'AR: piso detectado'
+                          : 'AR: $arTrackingState',
+                      style: TextStyle(
+                        color: floorDetected == true
+                            ? const Color(0xFF8BE3B1)
+                            : const Color(0xFF8DC1FF),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                  ],
-                ),
+                ],
               ),
             ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  headingDegrees == null
-                      ? 'Brújula: esperando datos'
-                      : '$headingSource: ${headingDegrees!.toStringAsFixed(0)}°  ·  Destino: ${targetBearing.toStringAsFixed(0)}°',
-                  style: const TextStyle(color: Colors.white60, fontSize: 12),
-                ),
-              ),
-              Text(
-                '${guidanceEnabled ? 'GPS' : 'PAUSA'} ±${horizontalAccuracy.toStringAsFixed(0)} m',
-                style: TextStyle(
-                  color: horizontalAccuracy <= 10
-                      ? const Color(0xFF8BE3B1)
-                      : const Color(0xFFFFC66E),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-          if (compassAccuracyDegrees != null || arTrackingState != null) ...[
             const SizedBox(height: 7),
-            Wrap(
-              spacing: 12,
-              runSpacing: 4,
-              children: [
-                if (compassAccuracyDegrees != null)
-                  Text(
-                    compassAccuracyDegrees! >= 0
-                        ? 'Brújula ±${compassAccuracyDegrees!.toStringAsFixed(0)}°'
-                        : 'Brújula sin precisión disponible',
-                    style: TextStyle(
-                      color: compassAccuracyDegrees! >= 0 &&
-                              compassAccuracyDegrees! <= 20
-                          ? const Color(0xFF8BE3B1)
-                          : const Color(0xFFFFC66E),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                if (arTrackingState != null)
-                  Text(
-                    floorDetected == true
-                        ? 'AR: piso detectado'
-                        : 'AR: $arTrackingState',
-                    style: TextStyle(
-                      color: floorDetected == true
-                          ? const Color(0xFF8BE3B1)
-                          : const Color(0xFF8DC1FF),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-              ],
-            ),
-          ],
-          const SizedBox(height: 7),
-          Text(
-            'Destino: ${destinationAccuracy.isFinite && destinationAccuracy > 0 ? '±${destinationAccuracy.toStringAsFixed(0)} m' : 'precisión desconocida'} · GPS hace ${math.max(0, gpsAgeSeconds)} s',
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
-          ),
-          const SizedBox(height: 7),
-          const Text('Dirección en línea recta. Confirma pasillos y piso.',
-              style: TextStyle(color: Colors.white70, fontSize: 12)),
-          if (sensorProblem != null) ...[
-            const SizedBox(height: 9),
             Text(
-              sensorProblem!,
-              style: const TextStyle(color: Color(0xFFFFC66E), fontSize: 12),
+              'Destino: ${destinationAccuracy.isFinite && destinationAccuracy > 0 ? '±${destinationAccuracy.toStringAsFixed(0)} m' : 'precisión desconocida'} · GPS hace ${math.max(0, gpsAgeSeconds)} s',
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
+            const SizedBox(height: 7),
+            const Text(
+              'Dirección en línea recta. Confirma pasillos y piso.',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            if (sensorProblem != null) ...[
+              const SizedBox(height: 9),
+              Text(
+                sensorProblem!,
+                style: const TextStyle(color: Color(0xFFFFC66E), fontSize: 12),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
-    ));
+    );
   }
 }
 
@@ -2727,7 +2883,8 @@ double coordinateDistanceMeters(
   final longitudeDelta = (longitudeB - longitudeA) * math.pi / 180;
   final latitudeARadians = latitudeA * math.pi / 180;
   final latitudeBRadians = latitudeB * math.pi / 180;
-  final haversine = math.sin(latitudeDelta / 2) * math.sin(latitudeDelta / 2) +
+  final haversine =
+      math.sin(latitudeDelta / 2) * math.sin(latitudeDelta / 2) +
       math.cos(latitudeARadians) *
           math.cos(latitudeBRadians) *
           math.sin(longitudeDelta / 2) *
@@ -2747,7 +2904,8 @@ double coordinateBearingDegrees(
   final endLatitude = latitudeB * math.pi / 180;
   final longitudeDelta = (longitudeB - longitudeA) * math.pi / 180;
   final y = math.sin(longitudeDelta) * math.cos(endLatitude);
-  final x = math.cos(startLatitude) * math.sin(endLatitude) -
+  final x =
+      math.cos(startLatitude) * math.sin(endLatitude) -
       math.sin(startLatitude) *
           math.cos(endLatitude) *
           math.cos(longitudeDelta);

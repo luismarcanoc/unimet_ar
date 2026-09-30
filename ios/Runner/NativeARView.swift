@@ -48,6 +48,8 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
   private var detectedAnchorId: UUID?
   private var lastTrackingMessage = ""
   private var arrowNodes: [SCNNode] = []
+  private var routeSegments: [SCNNode] = []
+  private var floatingGuideNode: SCNNode?
   private var destinationNode: SCNNode?
   private var navigationTargetBearing: Float
   private var navigationDistance: Float
@@ -125,7 +127,8 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
     sceneView.scene.rootNode.addChildNode(routeRoot)
 
     coaching.session = sceneView.session
-    coaching.goal = mode == .navigation ? .horizontalPlane : .tracking
+    // Navigation can start from stable world tracking; floor planes refine height later.
+    coaching.goal = .tracking
     coaching.activatesAutomatically = true
     coaching.translatesAutoresizingMaskIntoConstraints = false
     sceneView.addSubview(coaching)
@@ -160,6 +163,8 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
     lastNavigationUpdate = Date.timeIntervalSinceReferenceDate
     routeRoot.childNodes.forEach { $0.removeFromParentNode() }
     arrowNodes = []
+    routeSegments = []
+    floatingGuideNode = nil
     destinationNode = nil
     detectedFloorY = nil
     bestFloorScore = Float.greatestFiniteMagnitude
@@ -220,7 +225,7 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
     let distanceChange = abs(nextDistance - navigationDistance)
     navigationTargetBearing = normalizedDegrees(nextBearing)
     navigationDistance = max(0, nextDistance)
-    if bearingChange >= 2 || distanceChange >= 0.5 || arrowNodes.isEmpty ||
+    if bearingChange >= 7 || distanceChange >= 4 || arrowNodes.isEmpty ||
         wasEnabled != navigationEnabled {
       buildNavigationRoute()
     }
@@ -316,18 +321,35 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
     if isClassifiedFloor { score -= 1 }
     guard detectedFloorY == nil || score < bestFloorScore - 0.04 else { return }
 
-    detectedFloorY = candidateY + 0.025
+    let refinedY = candidateY + 0.025
+    let wasEstimated = detectedFloorY != nil && !floorEventSent
+    detectedFloorY = refinedY
     bestFloorScore = score
     buildNavigationRoute()
     if !floorEventSent {
       floorEventSent = true
-      emit("floorDetected", ["cameraHeight": Double(height)])
+      emit("floorDetected", [
+        "cameraHeight": Double(height),
+        "estimated": false,
+        "refinedEstimate": wasEstimated,
+      ])
     }
+  }
+
+  private func estimateFloorIfNeeded(_ cameraTransform: simd_float4x4) {
+    guard mode == .navigation, detectedFloorY == nil, trackingNormal else { return }
+    // A standing phone is usually 1.2-1.6 m above the walking surface. This
+    // provisional height removes the need to point at the floor; plane detection
+    // silently refines it when ARKit sees enough geometry.
+    detectedFloorY = cameraTransform.columns.3.y - 1.35 + 0.025
+    bestFloorScore = 10
+    emit("floorEstimated", ["cameraHeight": 1.35])
+    buildNavigationRoute()
   }
 
   private func buildNavigationRoute() {
     guard mode == .navigation else { return }
-    guard navigationEnabled, trackingNormal, cameraHeadingUsable,
+    guard navigationEnabled, trackingNormal,
           Date.timeIntervalSinceReferenceDate - lastNavigationUpdate < 2.5 else {
       routeRoot.isHidden = true
       return
@@ -359,8 +381,23 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
       }
     }
 
+    let segmentCount = max(1, arrowCount - 1)
+    if routeSegments.count != segmentCount {
+      routeSegments.forEach { $0.removeFromParentNode() }
+      routeSegments = (0..<segmentCount).map { _ in
+        let segment = makeRouteSegment()
+        routeRoot.addChildNode(segment)
+        return segment
+      }
+    }
+    if floatingGuideNode == nil {
+      let guide = makeFloatingGuideNode()
+      routeRoot.addChildNode(guide)
+      floatingGuideNode = guide
+    }
+
     SCNTransaction.begin()
-    SCNTransaction.animationDuration = lastRouteOrigin == nil ? 0 : 0.20
+    SCNTransaction.animationDuration = lastRouteOrigin == nil ? 0 : 0.45
     for index in 0..<arrowCount {
       let progress = Float(index + 1) / Float(arrowCount)
       let distance = 0.55 + (visibleLength - 0.55) * progress
@@ -379,10 +416,69 @@ final class UnimetARPlatformView: NSObject, FlutterPlatformView {
       )
     }
 
+    for index in 0..<segmentCount {
+      let startDistance = 0.75 + Float(index) * (visibleLength - 0.75) / Float(segmentCount)
+      let endDistance = 0.75 + Float(index + 1) * (visibleLength - 0.75) / Float(segmentCount)
+      let midpoint = (startDistance + endDistance) / 2
+      let segment = routeSegments[index]
+      segment.position = SCNVector3(
+        cameraPosition.x + direction.x * midpoint,
+        floorY - 0.005,
+        cameraPosition.z + direction.z * midpoint
+      )
+      segment.eulerAngles.y = radians
+      if let box = segment.geometry as? SCNBox {
+        box.length = CGFloat(endDistance - startDistance + 0.08)
+      }
+    }
+    floatingGuideNode?.position = SCNVector3(
+      cameraPosition.x + direction.x * min(visibleLength, 3.2),
+      floorY + 0.95,
+      cameraPosition.z + direction.z * min(visibleLength, 3.2)
+    )
+    floatingGuideNode?.eulerAngles.y = radians
+
     SCNTransaction.commit()
     // GPS does not identify an exact door: only the QR trial has a finish ring.
     destinationNode?.isHidden = true
     lastRouteOrigin = cameraPosition
+  }
+
+  private func makeRouteSegment() -> SCNNode {
+    let strip = SCNBox(width: 0.16, height: 0.018, length: 0.7, chamferRadius: 0.009)
+    let material = SCNMaterial()
+    material.diffuse.contents = UIColor(red: 0.06, green: 0.39, blue: 0.93, alpha: 0.52)
+    material.emission.contents = UIColor(red: 0.02, green: 0.18, blue: 0.55, alpha: 0.18)
+    material.isDoubleSided = true
+    strip.materials = [material]
+    return SCNNode(geometry: strip)
+  }
+
+  private func makeFloatingGuideNode() -> SCNNode {
+    let material = SCNMaterial()
+    material.diffuse.contents = UIColor(red: 0.08, green: 0.43, blue: 0.94, alpha: 0.9)
+    material.emission.contents = UIColor(red: 0.02, green: 0.20, blue: 0.62, alpha: 0.3)
+
+    let tip = SCNCone(topRadius: 0, bottomRadius: 0.13, height: 0.34)
+    tip.materials = [material]
+    let tipNode = SCNNode(geometry: tip)
+    tipNode.eulerAngles.x = -.pi / 2
+    tipNode.position.z = -0.18
+
+    let shaft = SCNCylinder(radius: 0.045, height: 0.28)
+    shaft.materials = [material]
+    let shaftNode = SCNNode(geometry: shaft)
+    shaftNode.eulerAngles.x = -.pi / 2
+    shaftNode.position.z = 0.10
+
+    let container = SCNNode()
+    container.addChildNode(tipNode)
+    container.addChildNode(shaftNode)
+    container.runAction(.repeatForever(.sequence([
+      .fadeOpacity(to: 0.62, duration: 0.8),
+      .fadeOpacity(to: 1.0, duration: 0.8),
+    ])))
+    return container
   }
 
   private func makeArrowNode() -> SCNNode {
@@ -503,6 +599,7 @@ extension UnimetARPlatformView: ARSessionDelegate {
     } else {
       trackingNormal = false
     }
+    estimateFloorIfNeeded(cameraTransform)
     // A camera looking almost vertically has no useful horizontal bearing.
     cameraHeadingUsable = trackingNormal && simd_length(forward) >= 0.25
     if frame.timestamp - lastHeadingEmission >= 0.10 {
@@ -517,7 +614,7 @@ extension UnimetARPlatformView: ARSessionDelegate {
       }
     }
 
-    guard navigationEnabled, cameraHeadingUsable,
+    guard navigationEnabled, trackingNormal,
           Date.timeIntervalSinceReferenceDate - lastNavigationUpdate < 2.5 else {
       routeRoot.isHidden = true
       return
@@ -531,7 +628,7 @@ extension UnimetARPlatformView: ARSessionDelegate {
         cameraTransform.columns.3.z
       )
       let horizontalMovement = SIMD2<Float>(current.x - origin.x, current.z - origin.z)
-      if simd_length(horizontalMovement) >= 0.9 {
+      if simd_length(horizontalMovement) >= 3.0 {
         buildNavigationRoute()
       }
     }

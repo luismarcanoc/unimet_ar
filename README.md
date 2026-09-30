@@ -13,6 +13,7 @@ ilustracion, pruebas y resultados CSV.
 - [Instalacion desde cero en Mac](docs/INSTALACION_MAC_COMPLETA.md).
 - [Android](docs/TUTORIAL_ANDROID.md).
 - [Diagnostico detallado de GPS](docs/PRUEBA_FISICA_UNIMET.md).
+- [Levantamiento de rutas y obstáculos](docs/LEVANTAMIENTO_RUTAS.md).
 
 Se requiere Flutter >=3.44, Dart >=3.12 e iOS >=15.5. En la Mac ahora se necesita
 CocoaPods para ML Kit, aunque otros plugins usen Swift Package Manager.
@@ -57,8 +58,10 @@ La guia a los salones sigue usando las coordenadas importadas.
 
 ## Limites Importantes
 
-La flecha GPS indica direccion en linea recta: no calcula rutas por pasillos,
-escaleras o paredes, ni garantiza precision de 2 metros. Se conservan el filtro
+La app usa rutas transitables cuando el salón y el usuario estan conectados a la
+red `assets/campus_routes.json`; mientras esa red siga vacia, avisa y usa
+orientacion directa. No detecta paredes o arboles por GPS ni garantiza precision
+de 2 metros. Se conservan el filtro
 GPS, la pausa con mala precision, el rumbo de camara y el diagnostico anterior.
 ARKit y el OCR de imagen deben comprobarse fisicamente en iPhone; en Android la
 guia conserva su implementacion de camara y brujula.

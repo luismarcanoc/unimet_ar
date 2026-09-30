@@ -264,12 +264,22 @@ class _CampusHomeState extends State<CampusHome> {
         _message('Se necesita permiso de ubicación.');
         return;
       }
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.bestForNavigation,
-          timeLimit: Duration(seconds: 25),
-        ),
-      );
+      final cached = await Geolocator.getLastKnownPosition();
+      final cachedIsUsable =
+          cached != null &&
+          cached.accuracy.isFinite &&
+          cached.accuracy > 0 &&
+          cached.accuracy <= 25 &&
+          DateTime.now().difference(cached.timestamp).abs() <=
+              const Duration(seconds: 6);
+      final position = cachedIsUsable
+          ? cached
+          : await Geolocator.getCurrentPosition(
+              locationSettings: const LocationSettings(
+                accuracy: LocationAccuracy.bestForNavigation,
+                timeLimit: Duration(seconds: 15),
+              ),
+            );
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
@@ -277,6 +287,7 @@ class _CampusHomeState extends State<CampusHome> {
             cameras: widget.cameras,
             initialPosition: position,
             destination: room,
+            currentFloor: _floor?.floor,
           ),
         ),
       );

@@ -8,7 +8,9 @@ dependencias OCR y combinar horarios/QR con esta prueba, leer primero
 [PRUEBA_HORARIOS_QR_UNIMET.md](PRUEBA_HORARIOS_QR_UNIMET.md).
 
 Esta prueba usa GPS y no necesita QR. La guia apunta en linea recta al destino:
-no calcula una ruta por pasillos ni determina el piso actual. El objetivo es
+cuando existe una red validada en `assets/campus_routes.json`, sigue sus pasillos
+y giros; si el archivo no cubre ese destino, avisa y usa linea recta. No determina
+el piso actual solamente mediante GPS. El objetivo es
 medir estabilidad, sentido de giro y comportamiento cuando falta precision.
 
 ## 1. Instalar la misma version en la Mac y el iPhone
@@ -58,6 +60,21 @@ Una persona camina y otra toma notas. No caminen por escaleras mirando la pantal
 | Ubicacion imprecisa | Lectura descartada o margen del telefono mayor a 25 m. |
 | Esperando un GPS actualizado | Mas de 8 s sin una lectura aceptada. |
 | Sin precision para indicar un giro | Destino demasiado cercano respecto al error combinado. |
+
+## 3.1 Verificar la nueva señalizacion AR
+
+1. Abrir la guia sosteniendo el telefono hacia el frente. La ruta debe aparecer
+   cuando ARKit estabilice el mundo, sin exigir apuntar primero al piso.
+2. El estado inicial puede decir `Altura estimada`; al detectar un plano fiable
+   cambia a piso detectado. La estimacion acelera el inicio, pero no constituye
+   una medicion exacta de altura.
+3. Levantar y bajar lentamente el telefono. La cinta y las flechas del suelo
+   quedan en el mundo; la flecha flotante mantiene visible la direccion al mirar
+   al frente.
+4. Caminar tres metros: el tramo visible se renueva por bloques, no en cada paso.
+   Anotar cualquier salto, vibracion o cambio de direccion tardio.
+5. En una ruta cartografiada, comprobar cada giro contra la red real. En modo
+   directo no evaluar evitacion de obstaculos: ese modo no conoce infraestructura.
 | Zona del destino; confirma el salon | Confirmar puerta y piso visualmente; no significa llegada exacta. |
 | Levanta la camara hacia el pasillo | La camara apunta casi verticalmente y su rumbo es ambiguo. |
 | Esperando orientacion fiable | Falta rumbo reciente, la brujula es imprecisa o ARKit esta recuperandose. |

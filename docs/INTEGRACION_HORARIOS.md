@@ -156,7 +156,9 @@ GPS. Las pruebas de Windows no validan esos sensores ni sustituyen la visita.
    referencia local, medir desplazamientos a puertas y registrar incertidumbre.
 4. Implementar la asociacion de deteccion de imagen ARKit con ese marco medido.
    Leer el texto de un QR no da automaticamente una pose 3D de precision.
-5. Levantar un grafo de pasillos, puertas y escaleras para rutas transitables.
+5. Completar el grafo de pasillos, puertas y escaleras en
+   `assets/campus_routes.json`; el motor A* y las instrucciones por giro ya estan
+   implementados. Seguir [LEVANTAMIENTO_RUTAS.md](LEVANTAMIENTO_RUTAS.md).
 
 La version actual conserva orientacion GPS y AR existente, sin prometer llegada
 a una puerta con error de 2 m. Ver la guia de campo antes de evaluar resultados.
