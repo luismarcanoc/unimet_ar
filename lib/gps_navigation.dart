@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:geolocator/geolocator.dart';
 
 const gpsFreshness = Duration(seconds: 8);
+const maxApproximateGpsAccuracyMeters = 100.0;
 
 enum GpsGuidance {
   acquiring,
@@ -39,7 +40,9 @@ class WalkingPositionFilter {
       // Cached or repeated samples must not count as independent fixes.
       return false;
     }
-    if (sample.accuracy > 50) return _reject('Lectura GPS demasiado imprecisa');
+    if (sample.accuracy > maxApproximateGpsAccuracyMeters) {
+      return _reject('Lectura GPS demasiado imprecisa');
+    }
 
     final previous = lastRaw;
     final seconds = previous == null
@@ -122,6 +125,13 @@ class WalkingPositionFilter {
     return GpsGuidance.ready;
   }
 }
+
+bool hasRecentApproximateFix(Position? fix, DateTime now) =>
+    fix != null &&
+    now.difference(fix.timestamp) <= gpsFreshness &&
+    fix.accuracy.isFinite &&
+    fix.accuracy > 0 &&
+    fix.accuracy <= maxApproximateGpsAccuracyMeters;
 
 double effectiveDestinationAccuracy(double accuracy) =>
     accuracy.isFinite && accuracy > 0 ? accuracy : 15;

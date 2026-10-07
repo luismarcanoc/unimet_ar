@@ -1793,9 +1793,17 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
       _orientationReady &&
       _locationProblem == null;
 
+  bool get _canShowApproximateDirection =>
+      _foreground &&
+      _locationProblem == null &&
+      hasRecentApproximateFix(_gps.position, DateTime.now()) &&
+      _lastHeadingAt != null &&
+      DateTime.now().difference(_lastHeadingAt!) < const Duration(seconds: 2) &&
+      _headingDegrees != null;
+
   bool get _canRenderArRoute =>
       Platform.isIOS &&
-      _gpsState == GpsGuidance.ready &&
+      hasRecentApproximateFix(_gps.position, DateTime.now()) &&
       _foreground &&
       _trackingNormal &&
       _arError == null &&
@@ -1907,14 +1915,18 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
         if (!mounted) return;
         setState(() {
           _compassAccuracyDegrees = event.accuracy;
-          // iOS camera mode from flutter_compass uses magnetic north, while
-          // this view uses ARKit's world heading. Do not mix those references.
-          if (!Platform.isIOS && newHeading != null) {
+          // The compass is an approximate screen-space fallback when ARKit
+          // cannot supply a camera heading.
+          if (newHeading != null &&
+              (!Platform.isIOS || !_trackingNormal || !_cameraHeadingValid)) {
             final now = DateTime.now();
+            if (Platform.isIOS && _headingSource == 'ARKit') {
+              _headingFilter.reset();
+            }
             _headingDegrees = _headingFilter.update(newHeading, now);
             _refreshInstruction();
             _lastHeadingAt = now;
-            _headingSource = 'Brújula';
+            _headingSource = Platform.isIOS ? 'Brújula aprox.' : 'Brújula';
           }
           _sensorProblem = event.accuracy != null && event.accuracy! > 25
               ? 'La brújula necesita calibración. Aléjate de metal y mueve el teléfono en forma de 8.'
@@ -1941,6 +1953,7 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
         if (heading == null || !heading.isFinite || heading < 0) return;
         setState(() {
           final now = DateTime.now();
+          if (_headingSource != 'ARKit') _headingFilter.reset();
           _headingDegrees = _headingFilter.update(heading, now);
           _refreshInstruction();
           _lastHeadingAt = now;
@@ -2020,15 +2033,18 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
         ? 0.0
         : relativeBearingDegrees(targetBearing, _headingDegrees!);
     final canGuide = _canGuide;
-    final status =
-        _locationProblem ??
+    final showDirection = _canShowApproximateDirection;
+    final turn = _turnInstruction ?? instructionFor(relativeBearing);
+    final status = showDirection && !canGuide
+        ? 'Dirección aproximada: $turn'
+        : _locationProblem ??
         (_gpsState != GpsGuidance.ready
             ? gpsGuidanceMessage(_gpsState)
             : !_orientationReady
             ? (Platform.isIOS && _trackingNormal && !_cameraHeadingValid
                   ? 'Levanta la cámara hacia el pasillo'
                   : 'Esperando orientación fiable')
-            : _turnInstruction ?? instructionFor(relativeBearing));
+            : turn);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -2067,19 +2083,31 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
                       mapped: true,
                     ),
                   const Spacer(),
-                  if (_arError != null)
-                    ArSessionErrorPanel(
-                      message: _arError!,
-                      onRetry: () => _navigationArKey.currentState?.restart(),
+                  if (showDirection &&
+                      (!Platform.isIOS || !_canRenderArRoute))
+                    SizedBox(
+                      height: _arError == null ? 250 : 130,
+                      child: FittedBox(
+                        fit: BoxFit.contain,
+                        child: PerspectiveNavigationArrow(
+                          relativeBearing: relativeBearing,
+                        ),
+                      ),
                     )
-                  else if (!canGuide)
+                  else if (!showDirection)
                     NavigationStatusBanner(message: status)
-                  else if (!Platform.isIOS)
-                    PerspectiveNavigationArrow(relativeBearing: relativeBearing)
                   else if (!_floorDetected)
                     ArFloorSearchState(trackingState: _arTrackingState)
                   else
                     ArRouteReadyBadge(estimated: _floorEstimated),
+                  if (_arError != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: ArSessionErrorPanel(
+                        message: _arError!,
+                        onRetry: () => _navigationArKey.currentState?.restart(),
+                      ),
+                    ),
                   const Spacer(),
                   Flexible(
                     flex: 4,
@@ -2093,7 +2121,7 @@ class _ArGuideScreenState extends State<ArGuideScreen> {
                       horizontalAccuracy: _currentPosition.accuracy,
                       sensorProblem: _locationProblem ?? _sensorProblem,
                       instruction: status,
-                      guidanceEnabled: canGuide,
+                      guidanceEnabled: showDirection,
                       destinationAccuracy: widget.destination.accuracy,
                       gpsAgeSeconds: DateTime.now()
                           .difference(_currentPosition.timestamp)
