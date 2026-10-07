@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:geolocator/geolocator.dart';
 
 const gpsFreshness = Duration(seconds: 8);
-const maxApproximateGpsAccuracyMeters = 100.0;
+const maxApproximateGpsAccuracyMeters = 20.0;
 
 enum GpsGuidance {
   acquiring,

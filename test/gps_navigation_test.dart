@@ -98,7 +98,7 @@ void main() {
     for (final sample in [
       fix(0, accuracy: 0),
       fix(0, accuracy: double.nan),
-      fix(0, accuracy: 120),
+      fix(0, accuracy: 21),
       fix(-20),
       fix(10)
     ]) {
@@ -107,15 +107,15 @@ void main() {
     expect(filter.position, isNull);
   });
 
-  test('keeps a recent 70 m fix available for approximate guidance', () {
+  test('keeps a recent 20 m fix available for approximate guidance', () {
     final filter = WalkingPositionFilter();
-    expect(filter.add(fix(0, accuracy: 70), start), isTrue);
+    expect(filter.add(fix(0, accuracy: 20), start), isTrue);
     expect(hasRecentApproximateFix(filter.position, start), isTrue);
     expect(hasRecentApproximateFix(
         filter.position, start.add(const Duration(seconds: 9))), isFalse);
     expect(filter.guidance(
         now: start, distance: 150, destinationAccuracy: 5),
-        GpsGuidance.poorAccuracy);
+        GpsGuidance.acquiring);
   });
 
   test('includes destination error and never declares exact arrival', () {
